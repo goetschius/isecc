@@ -1,2 +1,2 @@
 # isecc
-Icosahedral Subvolume Extraction and Correlated Classification
+Icosahedral Subparticle Extraction and Correlated Classification
