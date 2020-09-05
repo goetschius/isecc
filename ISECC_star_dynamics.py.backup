@@ -1,0 +1,212 @@
+#!/usr/bin/env python3.5
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+import argparse
+import sys
+import os
+import time
+import math
+import numpy as np
+from pyquaternion import Quaternion
+from datetime import datetime
+from isecc import transform
+from isecc import utils
+from isecc import starparse
+from isecc import symops
+
+def calculateDeltaXY( XAngst, YAngst, XPriorAngst, YPriorAngst ) :
+	deltaX = float( XAngst ) - float( XPriorAngst )
+	deltaY = float( YAngst ) - float( YPriorAngst )
+	deltaX2 = deltaX ** 2
+	deltaY2 = deltaY ** 2
+
+	## a^2 +b^2 = c^2 
+	deltaXY = ( deltaX2 + deltaY2 ) ** 0.5
+
+	return deltaX, deltaY, deltaXY
+
+def calculateDeltaPose( quaternionLocalPose, quaternionPriorPose ) :
+
+	# Finds the length of the chord of the shortest arc. We don't want this.
+	#deltaPoseChord = Quaternion.absolute_distance( quaternionLocalPose, quaternionPriorPose )
+
+	# Finds the length of the geodesic curve between poses
+	# Returns positive value
+	deltaPoseGeodesic = Quaternion.distance( quaternionLocalPose, quaternionPriorPose )
+
+	# Finds the length of the geodesic curve between poses	
+	#deltaPoseSym = Quaternion.sym_distance( quaternionLocalPose, quaternionPriorPose )
+
+	return deltaPoseGeodesic
+	
+
+def myProgram( my_ndarray, header, fullheader ) :
+
+	### Parse star file
+	rot_index, tilt_index, psi_index = starparse.getEulers( header )
+	rotPrior_index, tiltPrior_index, psiPrior_index = starparse.getEulerPriors( header )
+
+	originXAngst_index, originYAngst_index = starparse.getOffsetsAngst( header )
+	originXPriorAngst_index, originYPriorAngst_index = starparse.getOffsetPriorsAngst( header )
+
+	# Not currently needed
+#	defocusU_index, defocusV_index, defocusAngle_index = starparse.getDefocus( header )
+#	class_index = starparse.getClass( header )
+#	micrographname_index, imagename_index, particleID_index = starparse.getMicrographName( header )
+
+
+	deltaXY_list = np.zeros( len(my_ndarray) )
+	deltaPose_list = np.zeros( len(my_ndarray) )
+	
+	### Iterate through the entire array, modify values for a single rotation operation
+	for x in range(0,len(my_ndarray)):	    # Iterate over all particles
+
+		### Obtain Offsets
+		my_originXAngst = my_ndarray[x][originXAngst_index]
+		my_originYAngst = my_ndarray[x][originYAngst_index]
+
+		my_originXPriorAngst = my_ndarray[x][originXPriorAngst_index]
+		my_originYPriorAngst = my_ndarray[x][originYPriorAngst_index]
+
+		deltaX, deltaY, deltaXY = calculateDeltaXY( my_originXAngst, my_originYAngst, my_originXPriorAngst, my_originYPriorAngst )
+		deltaXY_list[x] = deltaXY
+
+		my_rotrad  = np.radians( float( my_ndarray[x][rot_index]  ) )
+		my_tiltrad = np.radians( float( my_ndarray[x][tilt_index] ) )
+		my_psirad  = np.radians( float( my_ndarray[x][psi_index]  ) )
+
+		my_rotradPrior  = np.radians( float( my_ndarray[x][rotPrior_index]  ) )
+		my_tiltradPrior = np.radians( float( my_ndarray[x][tiltPrior_index] ) )
+		my_psiradPrior  = np.radians( float( my_ndarray[x][psiPrior_index]  ) )	
+
+		
+		quaternionLocalPose = Quaternion( transform.myEuler2Quat( my_rotrad, my_tiltrad, my_psirad ) )
+		quaternionPriorPose = Quaternion( transform.myEuler2Quat( my_rotradPrior, my_tiltradPrior, my_psiradPrior ) )
+
+		deltaPose = calculateDeltaPose( quaternionLocalPose, quaternionPriorPose )
+		deltaPose_list[x] = deltaPose
+
+		if ( x % 50000 ) < 0.1 :
+			print( "Subparticle", x, "of", len(my_ndarray) )
+			print( "  deltaXY is:", np.around( deltaXY, 2 ), "Angstroms" )
+			print( "  deltaPose is:", np.around( np.degrees(deltaPose), 4 ), "degrees" )
+
+	deltaXY_average = np.average( deltaXY_list )
+	deltaXY_stdev = np.std( deltaXY_list )
+	deltaPose_average = np.average( deltaPose_list )
+	deltaPose_average = np.degrees( deltaPose_average )
+
+	print( "FINAL: Average deltaXY is:", np.around(deltaXY_average,2), "Angstroms" )
+	print( "       Stdev on deltaXY is", np.around(deltaXY_stdev,3) )
+	print( "FINAL: Average deltaPose is:", np.around(deltaPose_average,4), "degrees" )
+
+	return
+	
+
+def getStarHeader( my_star ):
+	header = []
+	header_index = int( 0 )
+	full_header = []
+	
+	# Add run info to output star file
+	date = str( datetime.now() )
+	append_this = ''.join( [ '# SCRIPT_RUN_DATE: ', date ] )
+	full_header.append( append_this.strip() )
+	print( append_this )
+
+	append_this = ''.join( [ '# SCRIPT_VERSION: ', sys.argv[0] ] )
+	full_header.append( append_this.strip() )
+	print( append_this )
+
+	arguments = ' '.join( sys.argv[1:] )
+	append_this = ''.join( [ '# SCRIPT_ARGS: ', arguments ] )
+	full_header.append( append_this.strip() )
+	print( append_this, "\n" )
+
+	with open(my_star, "r") as my_star:
+		
+		START_PARSE = None	# Needed for relion 3.1 star format
+
+		for line in my_star:
+
+			if START_PARSE == None:
+				### Store full header for final output
+				full_header.append( line.strip() )
+
+			if line.strip() == 'data_particles':
+				START_PARSE = True
+
+			if START_PARSE:
+				if line.startswith('loop_'):
+					full_header.append( '' )
+					full_header.append( line.strip() )
+				if line.startswith('_rln'):
+					full_header.append( line.strip() )
+					header_index = int( header_index + 1 )
+					header.append( line[1:].split()[0] )
+
+	if 'rlnImageOriginalName' not in header:
+		header.append( 'rlnImageOriginalName' )
+		header_index = int( header_index + 1 )
+
+		append_this = ''.join( [ '_rlnImageOriginalName #', str(header_index) ] )
+
+		full_header.append( append_this )
+
+	return header, full_header
+
+
+def getStarData( my_star, header_length ):
+	with open(my_star, "r") as my_star:
+		stardata = []
+
+		START_PARSE = None      # Needed for relion 3.1 star format
+
+		for line in my_star:
+
+			if line.strip() == 'data_particles':
+				START_PARSE = True
+
+			if START_PARSE:
+				line = ''.join( [ line, 'FILLER' ] )
+				linesplit = line.split()
+				if len( linesplit ) == header_length:
+					if line[0] != '#':      # avoid the stupid comment line
+						stardata.append( linesplit )
+	return stardata
+
+
+def main(args):
+
+	if args.input.endswith(".star"):
+		filename = args.input
+		header, fullheader = getStarHeader( filename )
+		stardata = getStarData( filename, len( header ) )
+		my_ndarray = np.asarray( stardata, order='C' )
+
+		myProgram( my_ndarray, header, fullheader )
+	else:
+		print( "Please provide a valid input file." )
+	sys.exit()
+
+	return 0
+
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser()
+	parser.add_argument("input", help="path to locally refined star file")
+	sys.exit(main(parser.parse_args()))
+
