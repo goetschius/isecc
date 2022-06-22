@@ -2,7 +2,7 @@
 scipy==1.4.1 
 pyquaternion==0.9.5 
 matplotlib==3.0.3 
-numpy==1.18.2 
+numpy==1.22.0 
 mrcfile==1.1.2 
 pyparsing==2.4.6 
 kiwisolver==1.1.0 
