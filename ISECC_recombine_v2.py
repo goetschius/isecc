@@ -366,6 +366,10 @@ def main(args):
         print("Please provide an mrc file for hexavalent capsomer")
         sys.exit
 
+    print("Please recombine subparticle maps using Chimera instead, i.e. fitting into a consensus map, followed by the command vop maximum.")
+    print("This script can produce improper recombined maps if precise assumptions are not met.")
+    sys.exit
+        
     """ Convert vectors from Angstroms to pixels """
     vector_pentavalent = np.true_divide( args.pentavalent_vector, args.angpix )
     vector_hexavalent  = np.true_divide( args.hexavalent_vector,  args.angpix )
