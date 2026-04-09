@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -10,7 +11,6 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import scipy as sp
 from matplotlib import cm
-import sys
 from isecc import utils
 from isecc import iseccFFT_v3
 
@@ -93,15 +93,31 @@ def plot3dimage( ndimage ):
 
     return
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Render an isosurface view from an MRC volume.'
+    )
+    parser.add_argument(
+        'input_file',
+        nargs='?',
+        default='../MRC/MuPyV_scale.mrc',
+        help='Path to the input MRC file',
+    )
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+
+    my_file = mrcfile.open(args.input_file).data
+    my_ndarray = np.copy(my_file)
+    my_ndarray = np.flipud(my_ndarray)
+    #my_ndarray = np.rot90(my_ndarray,k=-1,axes=(0,2))
+    my_ndarray = iseccFFT_v3.swapAxes_ndimage( my_ndarray )
+    #my_ndarray = np.rot90(my_ndarray, k=1, axes=(0,1))
+    del my_file
+
+    plot3dimage( my_ndarray )
 
 
-###
-my_file = mrcfile.open('../MRC/MuPyV_scale.mrc').data
-my_ndarray = np.copy(my_file)
-my_ndarray = np.flipud(my_ndarray)
-#my_ndarray = np.rot90(my_ndarray,k=-1,axes=(0,2))
-my_ndarray = iseccFFT_v3.swapAxes_ndimage( my_ndarray )
-#my_ndarray = np.rot90(my_ndarray, k=1, axes=(0,1))
-del my_file
-
-plot3dimage( my_ndarray )
+if __name__ == '__main__':
+    main()

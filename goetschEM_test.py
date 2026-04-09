@@ -24,12 +24,12 @@ b = r.apply(a) 	# where a is the rotation previously defined
 ### This is weird because I'm rotating the actual coordinate system...
 ### ...by treating coordinates as vectors
 
-### Will apctually want to do something along the lines of:
+### Will actually want to do something along the lines of:
 x = np.linspace(-229.5,229.5,460)
 y = np.copy(x)
 z = np.copy(x)
 
-
+### Not clear that I actually use the below line
 f=scipy.interpolate.LinearNDInterpolator(a,data)
 
 ### a should have the shape ( LEN, 3 )
@@ -63,10 +63,11 @@ b=r.apply(a)
 
 rotated_data=f(b)
 
-### Unfortunately, accessing the data from the interpolator takes too long... 0.022 seconds per coordinate. Or 600 hours for a box size 460,460,460
+### Unfortunately, accessing the data from the interpolator takes too long... 
+### 0.022 seconds per coordinate. Or 600 hours for a box size 460,460,460
 ### Actually, I might just be hitting the RAM limit on my laptop
 
 
 import timeit
 print(f( (100,100,100) ), timeit.timeit(stmt='a=10;b=10;sum=a+b'))
--0.0009630394735040682 0.022180300089530647
+#-0.0009630394735040682 0.022180300089530647
