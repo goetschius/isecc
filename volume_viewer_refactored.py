@@ -10,6 +10,39 @@ from skimage import measure
 
 from isecc import iseccFFT_v3
 
+CMOCEAN_CMAPS = (
+    "thermal",
+    "haline",
+    "solar",
+    "ice",
+    "gray",
+    "oxy",
+    "deep",
+    "dense",
+    "algae",
+    "matter",
+    "turbid",
+    "speed",
+    "amp",
+    "tempo",
+    "rain",
+    "phase",
+    "topo",
+    "balance",
+    "delta",
+    "curl",
+)
+
+MATPLOTLIB_FALLBACK_CMAPS = (
+    "viridis",
+    "plasma",
+    "inferno",
+    "magma",
+    "cividis",
+)
+
+AVAILABLE_CMAPS = CMOCEAN_CMAPS + MATPLOTLIB_FALLBACK_CMAPS
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -50,7 +83,11 @@ def parse_args():
     parser.add_argument(
         "--cmap",
         default="plasma",
-        help="Matplotlib colormap name for radial coloring.",
+        choices=AVAILABLE_CMAPS,
+        help=(
+            "Colormap for radial coloring. Supports perceptually uniform cmocean "
+            "maps plus a small matplotlib fallback set."
+        ),
     )
     parser.add_argument(
         "--fast",
@@ -58,6 +95,21 @@ def parse_args():
         help="Use a coarse, faster render preset for troubleshooting.",
     )
     return parser.parse_args()
+
+
+def get_colormap(cmap_name):
+    if cmap_name in CMOCEAN_CMAPS:
+        try:
+            import cmocean
+        except ImportError as exc:
+            raise RuntimeError(
+                f"Colormap '{cmap_name}' requires the cmocean package. "
+                "Install it in this environment with `pip install cmocean`."
+            ) from exc
+
+        return getattr(cmocean.cm, cmap_name)
+
+    return colormaps.get_cmap(cmap_name)
 
 
 def load_volume(input_file):
@@ -73,17 +125,22 @@ def load_volume(input_file):
     return volume, voxel_size
 
 
-def render_isosurface(
-    ndimage,
-    output_file,
-    angpix,
-    level=None,
-    step_size=2,
-    elev=30.0,
-    azim=45.0,
-    cmap_name="plasma",
-    edge_linewidth=0.05,
-):
+def resolve_angpix(cli_angpix, header_angpix):
+    if cli_angpix is not None:
+        angpix = cli_angpix
+        source = "--angpix"
+    elif header_angpix is not None:
+        angpix = header_angpix
+        source = "MRC header"
+    else:
+        angpix = 1.0
+        source = "default"
+
+    print(f"Using pixel size: {angpix:.4f} Å/pixel ({source})")
+    return angpix
+
+
+def extract_surface(ndimage, angpix, level=None, step_size=2, cmap_name="plasma"):
     total_start = time.perf_counter()
 
     if level is None:
@@ -114,17 +171,32 @@ def render_isosurface(
     else:
         normalized = (radii - radii.min()) / radius_span
 
-    colormap = colormaps.get_cmap(cmap_name)
+    colormap = get_colormap(cmap_name)
     facecolors = colormap(normalized)
     color_elapsed = time.perf_counter() - color_start
     print(f"Prepared mesh colors in {color_elapsed:.2f}s")
 
+    total_elapsed = time.perf_counter() - total_start
+    print(f"Surface extraction pipeline time: {total_elapsed:.2f}s")
+
+    return verts_centered, faces, facecolors
+
+
+def render_surface(
+    verts_centered,
+    faces,
+    facecolors,
+    output_file,
+    elev=30.0,
+    azim=45.0,
+    edge_linewidth=0.05,
+):
     render_start = time.perf_counter()
     fig = plt.figure(figsize=(7.5, 7.5))
     ax = fig.add_subplot(111, projection="3d")
 
     mesh = Poly3DCollection(
-        triangles,
+        verts_centered[faces],
         facecolors=facecolors,
         edgecolors="k",
         linewidths=edge_linewidth,
@@ -146,15 +218,13 @@ def render_isosurface(
     plt.savefig(output_file, bbox_inches="tight", dpi=300)
     plt.close(fig)
     render_elapsed = time.perf_counter() - render_start
-    total_elapsed = time.perf_counter() - total_start
     print(f"Rendered and saved image in {render_elapsed:.2f}s: {output_file}")
-    print(f"Total render pipeline time: {total_elapsed:.2f}s")
 
 
 def main():
     args = parse_args()
     volume, header_angpix = load_volume(args.input_file)
-    angpix = args.angpix if args.angpix is not None else (header_angpix or 1.0)
+    angpix = resolve_angpix(args.angpix, header_angpix)
 
     step_size = args.step_size
     level = args.level
@@ -166,17 +236,25 @@ def main():
             level = np.around((np.amax(volume) / 6.0) + 0.004, decimals=4)
         edge_linewidth = 0.0
 
-    render_isosurface(
+    total_start = time.perf_counter()
+    verts_centered, faces, facecolors = extract_surface(
         ndimage=volume,
-        output_file=args.output_file,
         angpix=angpix,
         level=level,
         step_size=step_size,
+        cmap_name=args.cmap,
+    )
+    render_surface(
+        verts_centered=verts_centered,
+        faces=faces,
+        facecolors=facecolors,
+        output_file=args.output_file,
         elev=args.elev,
         azim=args.azim,
-        cmap_name=args.cmap,
         edge_linewidth=edge_linewidth,
     )
+    total_elapsed = time.perf_counter() - total_start
+    print(f"Total render pipeline time: {total_elapsed:.2f}s")
 
 
 if __name__ == "__main__":
