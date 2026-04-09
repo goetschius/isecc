@@ -14,12 +14,12 @@ array = np.array([[-90.144, -157.144, -92.415]])
 I2Matrix_1 = np.array([
 [1,0,0],
 [0,1,0],
-[0,0,1]], dtype=np.float)
+[0,0,1]], dtype=float)
 
 I2Matrix_2 = np.array([
 [-1,0,0],
 [0,-1,0],
-[0,0,1]], dtype=np.float)
+[0,0,1]], dtype=float)
 
 I2Matrix_3 = np.array([
 [0.5,0.80902,0.30902],
@@ -89,7 +89,7 @@ I2Matrix_15 = np.array([
 I2Matrix_16 = np.array([
 [0,0,1],
 [1,0,0],
-[0,1,0]], dtype=np.float)
+[0,1,0]], dtype=float)
 
 I2Matrix_17 = np.array([
 [0.80902,0.30902,0.5],
@@ -109,7 +109,7 @@ I2Matrix_19 = np.array([
 I2Matrix_20 = np.array([
 [0,1,0],
 [0,0,1],
-[1,0,0]], dtype=np.float)
+[1,0,0]], dtype=float)
 
 I2Matrix_21 = np.array([
 [0.80902,0.30902,-0.5],
@@ -124,7 +124,7 @@ I2Matrix_22 = np.array([
 I2Matrix_23 = np.array([
 [0,0,1],
 [-1,0,0],
-[0,-1,0]], dtype=np.float)
+[0,-1,0]], dtype=float)
 
 I2Matrix_24 = np.array([
 [-0.80902,-0.30902,0.5],
@@ -154,7 +154,7 @@ I2Matrix_28 = np.array([
 I2Matrix_29 = np.array([
 [0,-1,0],
 [0,0,-1],
-[1,0,0]], dtype=np.float)
+[1,0,0]], dtype=float)
 
 I2Matrix_30 = np.array([
 [-0.80902,-0.30902,-0.5],
@@ -174,7 +174,7 @@ I2Matrix_32 = np.array([
 I2Matrix_33 = np.array([
 [0,0,-1],
 [-1,0,0],
-[0,1,0]], dtype=np.float)
+[0,1,0]], dtype=float)
 
 I2Matrix_34 = np.array([
 [-0.80902,-0.30902,-0.5],
@@ -214,12 +214,12 @@ I2Matrix_40 = np.array([
 I2Matrix_41 = np.array([
 [0,0,-1],
 [1,0,0],
-[0,-1,0]], dtype=np.float)
+[0,-1,0]], dtype=float)
 
 I2Matrix_42 = np.array([
 [0,-1,0],
 [0,0,1],
-[-1,0,0]], dtype=np.float)
+[-1,0,0]], dtype=float)
 
 I2Matrix_43 = np.array([
 [-0.30902,-0.5,0.80902],
@@ -239,7 +239,7 @@ I2Matrix_45 = np.array([
 I2Matrix_46 = np.array([
 [0,1,0],
 [0,0,-1],
-[-1,0,0]], dtype=np.float)
+[-1,0,0]], dtype=float)
 
 I2Matrix_47 = np.array([
 [-0.5,0.80902,0.30902],
@@ -279,7 +279,7 @@ I2Matrix_53 = np.array([
 I2Matrix_54 = np.array([
 [1,0,0],
 [0,-1,0],
-[0,0,-1]], dtype=np.float)
+[0,0,-1]], dtype=float)
 
 I2Matrix_55 = np.array([
 [0.5,-0.80902,-0.30902],
@@ -309,7 +309,7 @@ I2Matrix_59 = np.array([
 I2Matrix_60 = np.array([
 [-1,0,0],
 [0,1,0],
-[0,0,-1]], dtype=np.float)
+[0,0,-1]], dtype=float)
 #########################
 
 my_quat = np.around( np.array( R.from_matrix(I2Matrix_1).as_quat() ), decimals=3 )
@@ -432,4 +432,3 @@ my_quat = np.around( np.array( R.from_matrix(I2Matrix_59).as_quat() ), decimals=
 print( my_quat[3], my_quat[0], my_quat[1], my_quat[2]  )
 my_quat = np.around( np.array( R.from_matrix(I2Matrix_60).as_quat() ), decimals=3 )
 print( my_quat[3], my_quat[0], my_quat[1], my_quat[2]  )
-

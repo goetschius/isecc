@@ -172,7 +172,7 @@ def padCapsomer( capsomer, vector, subbox, mapbox ):
 def maskCapsomer( capsomer, correction_mask, vector, capsomer_centers ):
 
     capsomer_mask = np.ones_like( capsomer )
-    equidistance_mask = np.zeros_like( capsomer, dtype=np.bool )
+    equidistance_mask = np.zeros_like( capsomer, dtype=bool )
 
     nhalf = len(capsomer) // 2
     x0, y0, z0 = np.meshgrid(*[np.arange(-nhalf - 0.5, nhalf - 0.5)] * 3, indexing="ij")
@@ -200,17 +200,17 @@ def maskCapsomer( capsomer, correction_mask, vector, capsomer_centers ):
             mask = gold_distance <= dist_from_center
             mask_edge = gold_distance == dist_from_center
             equidistance_mask = equidistance_mask + mask_edge
-            capsomer_mask = capsomer_mask * mask.astype(np.int)
+            capsomer_mask = capsomer_mask * mask.astype(int)
             #print( np.unique(equidistance_mask) )
             
     """ Multiply by mask """
     capsomer = capsomer * capsomer_mask.astype(np.float32)
 
     """ Find intersection of equidistance_mask and capsomer_mask """
-    equidistance_mask = equidistance_mask * capsomer_mask.astype(np.bool)
+    equidistance_mask = equidistance_mask * capsomer_mask.astype(bool)
 
     """ Update the correction_mask """
-    correction_mask = correction_mask + equidistance_mask.astype(np.int)
+    correction_mask = correction_mask + equidistance_mask.astype(int)
     #print( "Unique values in correction mask", np.unique(correction_mask) )
 
     return capsomer, correction_mask
@@ -251,7 +251,7 @@ def stitchCapsomers( mrc_pentavalent, mrc_hexavalent, vector_pent, vector_hex, m
 
     """ Make ndarray to store the output map """
     capsid = np.zeros( (mapbox,mapbox,mapbox), dtype=np.float32)
-    correction_mask = np.zeros_like(capsid, dtype=np.int)
+    correction_mask = np.zeros_like(capsid, dtype=int)
 
     """ Take input """
     vector_pentavalent = np.array([ vector_pent[0], vector_pent[1], vector_pent[2] ])
@@ -300,10 +300,10 @@ def stitchCapsomers( mrc_pentavalent, mrc_hexavalent, vector_pent, vector_hex, m
     """ Store the centers. Rotate before converting to ZYX ordering """
     for index, symop in enumerate(symops_pent, start=0):    # papillomavirus and polyomavirus
         center = Quaternion(symop).inverse.rotate(vector_pentavalent)
-        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(np.int)
+        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(int)
     for index, symop in enumerate(symops_hex, start=len(symops_pent)):    # papillomavirus and polyomavirus
         center = Quaternion(symop).inverse.rotate(vector_hexavalent)
-        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(np.int)
+        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(int)
 
     """ Adjust the pentavalent capsomers """
     for index, symop in enumerate(symops_pent, start=0): 
@@ -324,7 +324,7 @@ def stitchCapsomers( mrc_pentavalent, mrc_hexavalent, vector_pent, vector_hex, m
     """ correction_mask currently contains values >1 at overlaps """
     """ should convert zeros to ones before dividing """
     correction_mask_offset = correction_mask == 0
-    correction_mask = correction_mask.astype(np.int) + correction_mask_offset.astype(np.int)
+    correction_mask = correction_mask.astype(int) + correction_mask_offset.astype(int)
 
     """ Correct the voxels that are overweighted. Avoid divide-by-zero error """
     capsid = np.divide( capsid, correction_mask.astype(np.float32) )
@@ -371,4 +371,3 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="name for output mrc file", default='icosahedron.mrc')
     parser.add_argument("--angpix", type=float, help="pixel size in the input maps", default='1.1')
     sys.exit(main(parser.parse_args()))
-

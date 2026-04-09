@@ -46,7 +46,7 @@ def fourierFilter( ndimage, mask_radius, lowpass=True, highpass=False ):
     if highpass:
         myMask = np.invert(myMask)
 
-    myMask = myMask.astype(np.int)
+    myMask = myMask.astype(int)
 
     """Apply the mask"""
     maskedFFT_shifted = myMask * myFFT_shifted
@@ -151,4 +151,3 @@ def saveMRC( ndimage, filename ):
         mrc.set_data( ndimage.astype(np.float32))
 
     return
-

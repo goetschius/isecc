@@ -77,7 +77,7 @@ def fourierFilter( ndimage, filter_res, lowpass=True, highpass=False ):
     if highpass:
         myMask = np.invert(myMask)
 
-    myMask = myMask.astype(np.int)
+    myMask = myMask.astype(int)
 
     """ Apply the mask """
     maskedFFT_shifted = myMask * myFFT_shifted
@@ -192,7 +192,7 @@ def vol_ft(vol, pfac=2, threads=1, normfft=1):
     ftc = np.zeros((ft.shape[0] + 3, ft.shape[1] + 3, ft.shape[2]), dtype=ft.dtype)
     vop.fill_ft(ft, ftc, vol.shape[0], normfft=normfft)
     print( ftc.shape )
-    plot2dimage(np.log10(np.abs(ftc[:][:][230])).astype(np.float))
+    plot2dimage(np.log10(np.abs(ftc[:][:][230])).astype(float))
     sys.exit()
     return ftc
 
@@ -213,7 +213,7 @@ def get2dsection( my_ndimage, my_rotation ) :
 #    box_size = myFFT_shifted.shape[0]
 
     mask = createSphericalMask( box_size, radius=100 )
-    mask = mask.astype(np.int)
+    mask = mask.astype(int)
     plot2dimage(mask[:][:][int(box_size/2)])
 
     #### TESTING 3DFFT ####
@@ -222,7 +222,7 @@ def get2dsection( my_ndimage, my_rotation ) :
     myFFT_shifted = np.fft.fftshift(myFFT)
     myFFT_shifted = mask * myFFT_shifted
 #    myFFT_shifted = vol_ft( my_ndimage )
-    plot2dimage(np.log10(np.abs(myFFT_shifted[:][:][int(box_size/2)].astype(np.float)**2)))
+    plot2dimage(np.log10(np.abs(myFFT_shifted[:][:][int(box_size/2)].astype(float)**2)))
 #    from pyfftw.interfaces.numpy_fft import rfftn
 
 #    mag_shifted = np.real(myFFT_shifted)
@@ -297,7 +297,7 @@ def get2dsection( my_ndimage, my_rotation ) :
     """ Display the image, for debug """
     plot2dimage(my_ndimage[:][:][half_box])
     plot2dimage(rotated_section)
-    plot2dimage( np.fft.ifftn(rotated_section_fft).astype(np.float) )
+    plot2dimage( np.fft.ifftn(rotated_section_fft).astype(float) )
 
     """ May require more thorough testing!! """
 
@@ -373,4 +373,3 @@ def saveMRC( ndimage, filename ):
         mrc.set_data( ndimage.astype(np.float32))
 
     return
-

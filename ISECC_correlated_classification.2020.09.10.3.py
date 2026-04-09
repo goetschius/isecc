@@ -434,7 +434,7 @@ def assessVertexOfType( subparticles, vertex_type, unique_indices ):
             output[x] = this_vertex['OccupiedStatus']
 
     """ Convert to int for easier parsing """
-    output = output.astype(np.int)
+    output = output.astype(int)
 
     return output
 
