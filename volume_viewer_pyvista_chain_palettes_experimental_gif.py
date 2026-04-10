@@ -57,6 +57,7 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
 )
+LIGHTING_PRESETS = ("flat", "balanced", "dramatic")
 QUALITY_PRESETS = {
     "fast": {"degrees_per_frame": 6.0, "fps": 15},
     "good": {"degrees_per_frame": 4.0, "fps": 18},
@@ -165,6 +166,54 @@ def parse_args():
         "--background",
         default="white",
         help="Background color for the rendered GIF.",
+    )
+    parser.add_argument(
+        "--lighting-preset",
+        choices=LIGHTING_PRESETS,
+        default="balanced",
+        help="Experimental lighting preset for the rendered surface.",
+    )
+    parser.add_argument(
+        "--smooth-shading",
+        action="store_true",
+        help="Use smooth shading instead of faceted shading.",
+    )
+    parser.add_argument(
+        "--shadows",
+        action="store_true",
+        help="Enable renderer shadows when supported by the local PyVista/VTK build.",
+    )
+    parser.add_argument(
+        "--silhouette",
+        action="store_true",
+        help="Add a silhouette overlay around the rendered surface.",
+    )
+    parser.add_argument(
+        "--silhouette-color",
+        default="black",
+        help="Color used for the silhouette overlay.",
+    )
+    parser.add_argument(
+        "--silhouette-width",
+        type=float,
+        default=None,
+        help="Line width used for the silhouette overlay. Defaults to an auto-scaled value based on render size.",
+    )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help="Add a wireframe outline overlay on top of the surface.",
+    )
+    parser.add_argument(
+        "--outline-color",
+        default="black",
+        help="Color used for the outline overlay.",
+    )
+    parser.add_argument(
+        "--outline-width",
+        type=float,
+        default=1.5,
+        help="Line width used for the outline overlay.",
     )
     parser.add_argument(
         "--symop",
@@ -998,6 +1047,100 @@ def add_scale_bar_to_gif(gif_path, box_size_angstrom, background="white"):
         print(f"Added GIF scale bar: {bar_length_angstrom} Å")
 
 
+def resolve_auto_silhouette_width(render_width, override_width=None):
+    if override_width is not None:
+        return override_width
+
+    auto_width = render_width / 685.0
+    auto_width = max(0.375, min(3.0, auto_width))
+    print(
+        f"Auto silhouette width: {auto_width:.2f} px for render width {render_width}"
+    )
+    return auto_width
+
+
+def lighting_kwargs_for_preset(lighting_preset):
+    if lighting_preset == "flat":
+        return {
+            "lighting": False,
+            "ambient": 1.0,
+            "diffuse": 0.0,
+            "specular": 0.0,
+            "specular_power": 1.0,
+        }
+    if lighting_preset == "dramatic":
+        return {
+            "lighting": True,
+            "ambient": 0.18,
+            "diffuse": 0.75,
+            "specular": 0.35,
+            "specular_power": 20.0,
+        }
+
+    return {
+        "lighting": True,
+        "ambient": 0.30,
+        "diffuse": 0.65,
+        "specular": 0.12,
+        "specular_power": 10.0,
+    }
+
+
+def add_experimental_overlays(
+    plotter,
+    mesh,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=3.0,
+):
+    if outline:
+        plotter.add_mesh(
+            mesh.copy(deep=True),
+            color=outline_color,
+            opacity=0.0,
+            lighting=False,
+            silhouette={
+                "color": outline_color,
+                "line_width": outline_width,
+            },
+        )
+
+    if silhouette:
+        try:
+            plotter.add_mesh(
+                mesh.copy(deep=True),
+                color=silhouette_color,
+                opacity=0.0,
+                lighting=False,
+                silhouette={
+                    "color": silhouette_color,
+                    "line_width": silhouette_width,
+                },
+            )
+        except Exception:
+            try:
+                silhouette_mesh = mesh.extract_feature_edges(
+                    boundary_edges=True,
+                    feature_edges=False,
+                    manifold_edges=False,
+                    non_manifold_edges=False,
+                )
+                if silhouette_mesh.n_cells > 0:
+                    plotter.add_mesh(
+                        silhouette_mesh,
+                        color=silhouette_color,
+                        line_width=silhouette_width,
+                        lighting=False,
+                    )
+                else:
+                    print("Silhouette overlay produced no visible boundary edges for this mesh")
+            except Exception as exc:
+                print(f"Silhouette overlay is unavailable in this environment: {exc}")
+
+
 def render_gif(
     verts_centered,
     faces,
@@ -1014,6 +1157,15 @@ def render_gif(
     base_boxsize=512,
     scale_bar=False,
     box_size_angstrom=None,
+    lighting_preset="balanced",
+    smooth_shading=False,
+    shadows=False,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=None,
 ):
     try:
         import pyvista as pv
@@ -1025,16 +1177,36 @@ def render_gif(
 
     render_start = time.perf_counter()
     mesh = make_pyvista_mesh(verts_centered, faces, facecolors)
+    mesh_lighting = lighting_kwargs_for_preset(lighting_preset)
+    silhouette_width = resolve_auto_silhouette_width(
+        render_width=base_boxsize,
+        override_width=silhouette_width,
+    )
 
     plotter = pv.Plotter(off_screen=True, window_size=(base_boxsize, base_boxsize))
     plotter.set_background(background)
+    if shadows and mesh_lighting["lighting"]:
+        try:
+            plotter.enable_shadows()
+        except Exception as exc:
+            print(f"Shadow rendering is unavailable in this environment: {exc}")
     plotter.add_mesh(
         mesh,
         scalars="face_rgb",
         rgb=True,
         show_edges=False,
-        smooth_shading=False,
-        lighting=True,
+        smooth_shading=smooth_shading,
+        **mesh_lighting,
+    )
+    add_experimental_overlays(
+        plotter=plotter,
+        mesh=mesh,
+        outline=outline,
+        outline_color=outline_color,
+        outline_width=outline_width,
+        silhouette=silhouette,
+        silhouette_color=silhouette_color,
+        silhouette_width=silhouette_width,
     )
 
     camera_distance = camera_distance_for_mesh(
@@ -1148,6 +1320,15 @@ def main():
         base_boxsize=args.base_boxsize,
         scale_bar=args.scale_bar,
         box_size_angstrom=box_size_angstrom,
+        lighting_preset=args.lighting_preset,
+        smooth_shading=args.smooth_shading,
+        shadows=args.shadows,
+        outline=args.outline,
+        outline_color=args.outline_color,
+        outline_width=args.outline_width,
+        silhouette=args.silhouette,
+        silhouette_color=args.silhouette_color,
+        silhouette_width=args.silhouette_width,
     )
     total_elapsed = time.perf_counter() - total_start
     print(f"Total render pipeline time: {total_elapsed:.2f}s")

@@ -6,7 +6,7 @@ import time
 import mrcfile
 import numpy as np
 from matplotlib import colormaps
-from PIL import Image, ImageColor, ImageDraw, ImageFont, ImageSequence
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 from scipy import ndimage as ndi
 from scipy.spatial.transform import Rotation as R
 from skimage import measure
@@ -47,33 +47,38 @@ MATPLOTLIB_FALLBACK_CMAPS = (
 
 AVAILABLE_CMAPS = CMOCEAN_CMAPS + MATPLOTLIB_FALLBACK_CMAPS
 DEFAULT_BASE_CMAP = "gray"
-MAX_CHAIN_COLOR_GROUPS = 10
-CHAIN_A_PALETTE = "YlOrRd"
-CHAIN_HL_PALETTE = "PuBuGn"
-CHAIN_A_LABEL = "Chain A"
-CHAIN_HL_LABEL = "Chains H/L"
+
 FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
 )
-QUALITY_PRESETS = {
-    "fast": {"degrees_per_frame": 6.0, "fps": 15},
-    "good": {"degrees_per_frame": 4.0, "fps": 18},
-    "better": {"degrees_per_frame": 2.0, "fps": 20},
-    "best": {"degrees_per_frame": 1.0, "fps": 24},
-}
+
+MAX_CHAIN_COLOR_GROUPS = 10
+CHAIN_A_PALETTE = "YlOrRd"
+CHAIN_HL_PALETTE = "PuBuGn"
+CHAIN_A_LABEL = "Chain A"
+CHAIN_HL_LABEL = "Chains H/L"
+LIGHTING_PRESETS = ("flat", "balanced", "dramatic")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Render an animated GIF isosurface view from an MRC volume using "
-            "PyVista, with optional chain-aware coloring from an mmCIF model."
+            "Render an isosurface view from an MRC volume using PyVista, with "
+            "optional chain-aware coloring from an mmCIF model."
         )
     )
-    parser.add_argument("input_file", nargs="?", help="Path to the input MRC file")
-    parser.add_argument("output_file", nargs="?", help="Path to the output GIF file")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        help="Path to the input MRC file",
+    )
+    parser.add_argument(
+        "output_file",
+        nargs="?",
+        help="Path to the output image file",
+    )
     parser.add_argument(
         "--list-palettes",
         action="store_true",
@@ -142,14 +147,14 @@ def parse_args():
     parser.add_argument(
         "--elev",
         type=float,
-        default=20.0,
+        default=30.0,
         help="Camera elevation in degrees.",
     )
     parser.add_argument(
         "--azim",
         type=float,
-        default=0.0,
-        help="Starting camera azimuth in degrees.",
+        default=45.0,
+        help="Camera azimuth in degrees.",
     )
     parser.add_argument(
         "--cmap",
@@ -162,9 +167,77 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Use a coarse, faster render preset for troubleshooting.",
+    )
+    parser.add_argument(
+        "--window-size",
+        type=int,
+        nargs=2,
+        metavar=("WIDTH", "HEIGHT"),
+        default=(1600, 1600),
+        help="Off-screen render size in pixels.",
+    )
+    parser.add_argument(
+        "--base-boxsize",
+        type=int,
+        choices=(128, 256, 512, 1024),
+        default=None,
+        help="Square base render size in pixels before optional cropping.",
+    )
+    parser.add_argument(
         "--background",
         default="white",
-        help="Background color for the rendered GIF.",
+        help="Background color for the rendered image.",
+    )
+    parser.add_argument(
+        "--lighting-preset",
+        choices=LIGHTING_PRESETS,
+        default="balanced",
+        help="Experimental lighting preset for the rendered surface.",
+    )
+    parser.add_argument(
+        "--smooth-shading",
+        action="store_true",
+        help="Use smooth shading instead of faceted shading.",
+    )
+    parser.add_argument(
+        "--shadows",
+        action="store_true",
+        help="Enable renderer shadows when supported by the local PyVista/VTK build.",
+    )
+    parser.add_argument(
+        "--silhouette",
+        action="store_true",
+        help="Add a silhouette overlay around the rendered surface.",
+    )
+    parser.add_argument(
+        "--silhouette-color",
+        default="black",
+        help="Color used for the silhouette overlay.",
+    )
+    parser.add_argument(
+        "--silhouette-width",
+        type=float,
+        default=None,
+        help="Line width used for the silhouette overlay. Defaults to an auto-scaled value based on render size.",
+    )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help="Add a wireframe outline overlay on top of the surface.",
+    )
+    parser.add_argument(
+        "--outline-color",
+        default="black",
+        help="Color used for the outline overlay.",
+    )
+    parser.add_argument(
+        "--outline-width",
+        type=float,
+        default=1.5,
+        help="Line width used for the outline overlay.",
     )
     parser.add_argument(
         "--symop",
@@ -173,31 +246,14 @@ def parse_args():
         help="Icosahedral symmetry operation to apply, numbered 1-60. 1 is identity.",
     )
     parser.add_argument(
-        "--fast",
+        "--all-symops",
         action="store_true",
-        help="Use a coarse, faster render preset for troubleshooting.",
+        help="Render all 60 symmetry operations using the output path as a filename stem.",
     )
     parser.add_argument(
-        "--quality",
-        choices=tuple(QUALITY_PRESETS.keys()),
-        default="better",
-        help=(
-            "Animation quality preset controlling rotation step and default FPS. "
-            "Does not affect image size."
-        ),
-    )
-    parser.add_argument(
-        "--fps",
-        type=int,
-        default=None,
-        help="Frames per second for the output GIF. Overrides the --quality preset.",
-    )
-    parser.add_argument(
-        "--base-boxsize",
-        type=int,
-        choices=(128, 256, 512, 1024),
-        default=512,
-        help="Square base render size in pixels before optional cropping.",
+        "--all-cmaps",
+        action="store_true",
+        help="Render one output for every available colormap using the output path as a filename stem.",
     )
     parser.add_argument(
         "--crop",
@@ -212,14 +268,14 @@ def parse_args():
     )
     parser.add_argument(
         "--crop-size-mode",
-        choices=("multiple_of_10", "power_of_2"),
-        default="multiple_of_10",
-        help="Snap cropped square GIF size to a multiple of 10 or a power of 2.",
+        choices=("multiple_of_100", "power_of_2"),
+        default="multiple_of_100",
+        help="Snap cropped square output size to a multiple of 100 or a power of 2.",
     )
     parser.add_argument(
         "--scale-bar",
         action="store_true",
-        help="Add a labeled scale bar in Angstroms to every GIF frame.",
+        help="Add a labeled scale bar in Angstroms to the output image.",
     )
     return parser.parse_args()
 
@@ -396,18 +452,6 @@ def resolve_world_origin(origin, starts, angpix):
         f"({source})"
     )
     return world_origin
-
-
-def resolve_animation_settings(quality, fps_override):
-    settings = QUALITY_PRESETS[quality]
-    degrees_per_frame = settings["degrees_per_frame"]
-    fps = settings["fps"] if fps_override is None else fps_override
-    num_frames = max(1, int(np.ceil(360.0 / degrees_per_frame)))
-    print(
-        f"Animation quality '{quality}': {degrees_per_frame:.2f} degrees/frame, "
-        f"{num_frames} frames, {fps} fps"
-    )
-    return degrees_per_frame, fps, num_frames
 
 
 def remove_dust_components(ndimage, level, angpix, dust_volume_cutoff):
@@ -593,6 +637,7 @@ def recolor_faces_by_chain_proximity(
     distance_matrix = np.vstack(group_distances)
     valid_matrix = np.isfinite(distance_matrix)
     any_match = np.any(valid_matrix, axis=0)
+
     nearest_group_indices = np.argmin(distance_matrix, axis=0)
 
     for group_index, group in enumerate(chain_groups):
@@ -624,7 +669,7 @@ def extract_surface(
     dust_volume_cutoff=4.0,
     level=None,
     step_size=2,
-    cmap_name=DEFAULT_BASE_CMAP,
+    cmap_name="plasma",
 ):
     total_start = time.perf_counter()
 
@@ -717,6 +762,7 @@ def make_pyvista_mesh(verts_centered, faces, facecolors):
             "Install it with `pip install pyvista` and rerun this script."
         ) from exc
 
+    # PolyData expects each face prefixed by its vertex count.
     faces_pv = np.hstack(
         [np.full((faces.shape[0], 1), 3, dtype=np.int64), faces.astype(np.int64)]
     ).ravel()
@@ -738,6 +784,22 @@ def apply_symmetry_operation(verts_centered, symop_index):
     rotated_verts = rotation.apply(verts_centered)
     print(f"Applied symmetry operation {symop_index}: {pyquat.tolist()}")
     return rotated_verts
+
+
+def output_path_for_symop(output_file, symop_index):
+    output_path = Path(output_file)
+    suffix = output_path.suffix
+    stem = output_path.stem
+    parent = output_path.parent
+    return parent / f"{stem}_symop{symop_index:02d}{suffix}"
+
+
+def output_path_for_cmap(output_file, cmap_name):
+    output_path = Path(output_file)
+    suffix = output_path.suffix
+    stem = output_path.stem
+    parent = output_path.parent
+    return parent / f"{stem}_cmap-{cmap_name}{suffix}"
 
 
 def camera_position_from_angles(elev, azim, distance):
@@ -774,13 +836,13 @@ def snap_square_size(size, limit, mode):
         while snapped < size:
             snapped *= 2
     else:
-        snapped = ((size + 9) // 10) * 10
+        snapped = ((size + 99) // 100) * 100
 
     if snapped > limit:
         if mode == "power_of_2":
             snapped = 2 ** int(np.floor(np.log2(limit)))
         else:
-            snapped = (limit // 10) * 10
+            snapped = (limit // 100) * 100
 
     if snapped < size:
         snapped = size
@@ -827,60 +889,39 @@ def load_annotation_font(image_width):
     return ImageFont.load_default()
 
 
-def estimate_frame_background_rgb(frame_array, fallback_background):
-    return fallback_background
+def crop_image_symmetrically(
+    image_path,
+    background="white",
+    pad=0,
+    tolerance=6,
+    size_mode="multiple_of_100",
+):
+    with Image.open(image_path) as image:
+        image = image.convert("RGBA")
+        image_array = np.array(image)
 
+        background_rgb = np.array(ImageColor.getrgb(background), dtype=np.int16)
+        rgb = image_array[:, :, :3].astype(np.int16)
+        alpha = image_array[:, :, 3]
 
-def crop_gif_symmetrically(gif_path, background="white", pad=0, tolerance=6, size_mode="multiple_of_10"):
-    with Image.open(gif_path) as image:
-        frames = []
-        durations = []
-        disposals = []
-        fallback_background_rgb = np.array(ImageColor.getrgb(background), dtype=np.int16)
+        color_distance = np.max(np.abs(rgb - background_rgb), axis=2)
+        foreground_mask = (alpha > 0) & (color_distance > tolerance)
 
-        global_top = None
-        global_bottom = None
-        global_left = None
-        global_right = None
-
-        for frame in ImageSequence.Iterator(image):
-            rgba = frame.convert("RGBA")
-            frames.append(rgba.copy())
-            durations.append(frame.info.get("duration", image.info.get("duration", 40)))
-            disposals.append(frame.disposal_method if hasattr(frame, "disposal_method") else 2)
-
-            frame_array = np.array(rgba)
-            background_rgb = estimate_frame_background_rgb(
-                frame_array, fallback_background_rgb
-            )
-            rgb = frame_array[:, :, :3].astype(np.int16)
-            alpha = frame_array[:, :, 3]
-            color_distance = np.max(np.abs(rgb - background_rgb), axis=2)
-            foreground_mask = (alpha > 0) & (color_distance > tolerance)
-
-            if not np.any(foreground_mask):
-                continue
-
-            rows, cols = np.where(foreground_mask)
-            top = int(rows.min())
-            bottom = int(rows.max())
-            left = int(cols.min())
-            right = int(cols.max())
-
-            global_top = top if global_top is None else min(global_top, top)
-            global_bottom = bottom if global_bottom is None else max(global_bottom, bottom)
-            global_left = left if global_left is None else min(global_left, left)
-            global_right = right if global_right is None else max(global_right, right)
-
-        if global_top is None:
-            print(f"No foreground detected for crop: {gif_path}")
+        if not np.any(foreground_mask):
+            print(f"No foreground detected for crop: {image_path}")
             return
 
-        width, height = frames[0].size
-        top = max(0, global_top - pad)
-        left = max(0, global_left - pad)
-        bottom = min(height - 1, global_bottom + pad)
-        right = min(width - 1, global_right + pad)
+        rows, cols = np.where(foreground_mask)
+        top = int(rows.min())
+        bottom = int(rows.max())
+        left = int(cols.min())
+        right = int(cols.max())
+
+        height, width = foreground_mask.shape
+        top = max(0, top - pad)
+        left = max(0, left - pad)
+        bottom = min(height - 1, bottom + pad)
+        right = min(width - 1, right + pad)
 
         top_margin = top
         bottom_margin = height - 1 - bottom
@@ -905,115 +946,197 @@ def crop_gif_symmetrically(gif_path, background="white", pad=0, tolerance=6, siz
 
         center_y = (height - 1) / 2.0
         center_x = (width - 1) / 2.0
+
         symmetric_top = int(round(center_y - (square_size / 2.0) + 0.5))
         symmetric_left = int(round(center_x - (square_size / 2.0) + 0.5))
         symmetric_top = max(0, min(symmetric_top, height - square_size))
         symmetric_left = max(0, min(symmetric_left, width - square_size))
-        symmetric_bottom = symmetric_top + square_size
-        symmetric_right = symmetric_left + square_size
+        symmetric_bottom = symmetric_top + square_size - 1
+        symmetric_right = symmetric_left + square_size - 1
 
-        cropped_frames = [
-            frame.crop((symmetric_left, symmetric_top, symmetric_right, symmetric_bottom))
-            for frame in frames
-        ]
-
-        cropped_frames[0].save(
-            gif_path,
-            save_all=True,
-            append_images=cropped_frames[1:],
-            duration=durations,
-            loop=image.info.get("loop", 0),
-            disposal=disposals,
+        cropped = image.crop(
+            (
+                symmetric_left,
+                symmetric_top,
+                symmetric_right + 1,
+                symmetric_bottom + 1,
+            )
         )
+        cropped.save(image_path)
         print(
-            f"Cropped GIF symmetrically: {gif_path} -> "
-            f"{square_size}x{square_size} ({size_mode})"
+            f"Cropped image symmetrically: {image_path} -> "
+            f"{cropped.size[0]}x{cropped.size[1]} ({size_mode})"
         )
 
 
-def add_scale_bar_to_gif(gif_path, box_size_angstrom, background="white"):
+def add_scale_bar(image_path, box_size_angstrom, background="white"):
     bar_length_angstrom = choose_scale_bar_length(box_size_angstrom)
 
-    with Image.open(gif_path) as image:
-        frames = []
-        durations = []
-        disposals = []
+    with Image.open(image_path) as image:
+        image = image.convert("RGBA")
+        draw = ImageDraw.Draw(image)
+        font = load_annotation_font(image.size[0])
 
-        for frame in ImageSequence.Iterator(image):
-            rgba = frame.convert("RGBA")
-            draw = ImageDraw.Draw(rgba)
-            font = load_annotation_font(rgba.size[0])
+        width, height = image.size
+        pixels_per_angstrom = width / float(box_size_angstrom)
+        bar_length_pixels = max(1, int(round(bar_length_angstrom * pixels_per_angstrom)))
 
-            width, height = rgba.size
-            pixels_per_angstrom = width / float(box_size_angstrom)
-            bar_length_pixels = max(1, int(round(bar_length_angstrom * pixels_per_angstrom)))
+        margin = max(12, width // 20)
+        bar_thickness = max(4, width // 200)
+        text_gap = max(8, width // 80)
+        text = f"{int(bar_length_angstrom)} Å"
+        text_bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = text_bbox[2] - text_bbox[0]
+        text_height = text_bbox[3] - text_bbox[1]
 
-            margin = max(12, width // 20)
-            bar_thickness = max(4, width // 200)
-            text_gap = max(8, width // 80)
-            text = f"{int(bar_length_angstrom)} Å"
-            text_bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = text_bbox[2] - text_bbox[0]
-            text_height = text_bbox[3] - text_bbox[1]
+        bar_x0 = width - margin - bar_length_pixels
+        bar_x1 = width - margin
+        bar_y1 = height - margin
+        bar_y0 = bar_y1 - bar_thickness
+        text_x = bar_x0 + (bar_length_pixels - text_width) // 2
+        text_y = bar_y0 - text_gap - text_height
 
-            bar_x0 = width - margin - bar_length_pixels
-            bar_x1 = width - margin
-            bar_y1 = height - margin
-            bar_y0 = bar_y1 - bar_thickness
-            text_x = bar_x0 + (bar_length_pixels - text_width) // 2
-            text_y = bar_y0 - text_gap - text_height
+        bg_rgb = ImageColor.getrgb(background)
+        brightness = sum(bg_rgb) / 3.0
+        foreground = (0, 0, 0, 255) if brightness > 127 else (255, 255, 255, 255)
+        outline = (255, 255, 255, 255) if brightness > 127 else (0, 0, 0, 255)
 
-            bg_rgb = ImageColor.getrgb(background)
-            brightness = sum(bg_rgb) / 3.0
-            foreground = (0, 0, 0, 255) if brightness > 127 else (255, 255, 255, 255)
-            outline = (255, 255, 255, 255) if brightness > 127 else (0, 0, 0, 255)
-
-            draw.rectangle(
-                [bar_x0, bar_y0, bar_x1, bar_y1],
-                fill=foreground,
-                outline=outline,
-                width=1,
-            )
-            draw.text(
-                (text_x, text_y),
-                text,
-                fill=foreground,
-                font=font,
-                stroke_width=1,
-                stroke_fill=outline,
-            )
-
-            frames.append(rgba)
-            durations.append(frame.info.get("duration", image.info.get("duration", 40)))
-            disposals.append(frame.disposal_method if hasattr(frame, "disposal_method") else 2)
-
-        frames[0].save(
-            gif_path,
-            save_all=True,
-            append_images=frames[1:],
-            duration=durations,
-            loop=image.info.get("loop", 0),
-            disposal=disposals,
+        draw.rectangle(
+            [bar_x0, bar_y0, bar_x1, bar_y1],
+            fill=foreground,
+            outline=outline,
+            width=1,
         )
-        print(f"Added GIF scale bar: {bar_length_angstrom} Å")
+        draw.text(
+            (text_x, text_y),
+            text,
+            fill=foreground,
+            font=font,
+            stroke_width=1,
+            stroke_fill=outline,
+        )
+
+        image.save(image_path)
+        print(f"Added scale bar: {bar_length_angstrom} Å")
 
 
-def render_gif(
+def resolve_auto_silhouette_width(render_width, override_width=None):
+    if override_width is not None:
+        return override_width
+
+    auto_width = render_width / 685.0
+    auto_width = max(0.375, min(3.0, auto_width))
+    print(
+        f"Auto silhouette width: {auto_width:.2f} px for render width {render_width}"
+    )
+    return auto_width
+
+
+def lighting_kwargs_for_preset(lighting_preset):
+    if lighting_preset == "flat":
+        return {
+            "lighting": False,
+            "ambient": 1.0,
+            "diffuse": 0.0,
+            "specular": 0.0,
+            "specular_power": 1.0,
+        }
+    if lighting_preset == "dramatic":
+        return {
+            "lighting": True,
+            "ambient": 0.18,
+            "diffuse": 0.75,
+            "specular": 0.35,
+            "specular_power": 20.0,
+        }
+
+    return {
+        "lighting": True,
+        "ambient": 0.30,
+        "diffuse": 0.65,
+        "specular": 0.12,
+        "specular_power": 10.0,
+    }
+
+
+def add_experimental_overlays(
+    plotter,
+    mesh,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=3.0,
+):
+    if outline:
+        plotter.add_mesh(
+            mesh.copy(deep=True),
+            color=outline_color,
+            opacity=0.0,
+            lighting=False,
+            silhouette={
+                "color": outline_color,
+                "line_width": outline_width,
+            },
+        )
+
+    if silhouette:
+        try:
+            plotter.add_mesh(
+                mesh.copy(deep=True),
+                color=silhouette_color,
+                opacity=0.0,
+                lighting=False,
+                silhouette={
+                    "color": silhouette_color,
+                    "line_width": silhouette_width,
+                },
+            )
+        except Exception:
+            try:
+                silhouette_mesh = mesh.extract_feature_edges(
+                    boundary_edges=True,
+                    feature_edges=False,
+                    manifold_edges=False,
+                    non_manifold_edges=False,
+                )
+                if silhouette_mesh.n_cells > 0:
+                    plotter.add_mesh(
+                        silhouette_mesh,
+                        color=silhouette_color,
+                        line_width=silhouette_width,
+                        lighting=False,
+                    )
+                else:
+                    print("Silhouette overlay produced no visible boundary edges for this mesh")
+            except Exception as exc:
+                print(f"Silhouette overlay is unavailable in this environment: {exc}")
+
+
+def render_surface(
     verts_centered,
     faces,
     facecolors,
     output_file,
-    elev=20.0,
-    azim=0.0,
+    elev=30.0,
+    azim=45.0,
     background="white",
-    fps=24,
-    degrees_per_frame=2.0,
+    window_size=(1600, 1600),
     crop=False,
     crop_pad=0,
-    crop_size_mode="multiple_of_10",
-    base_boxsize=512,
+    crop_size_mode="multiple_of_100",
     scale_bar=False,
     box_size_angstrom=None,
+    lighting_preset="balanced",
+    smooth_shading=False,
+    shadows=False,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=None,
 ):
     try:
         import pyvista as pv
@@ -1025,51 +1148,68 @@ def render_gif(
 
     render_start = time.perf_counter()
     mesh = make_pyvista_mesh(verts_centered, faces, facecolors)
+    mesh_lighting = lighting_kwargs_for_preset(lighting_preset)
+    render_width = int(window_size[0])
+    silhouette_width = resolve_auto_silhouette_width(
+        render_width=render_width,
+        override_width=silhouette_width,
+    )
 
-    plotter = pv.Plotter(off_screen=True, window_size=(base_boxsize, base_boxsize))
+    plotter = pv.Plotter(off_screen=True, window_size=window_size)
     plotter.set_background(background)
+    if shadows and mesh_lighting["lighting"]:
+        try:
+            plotter.enable_shadows()
+        except Exception as exc:
+            print(f"Shadow rendering is unavailable in this environment: {exc}")
     plotter.add_mesh(
         mesh,
         scalars="face_rgb",
         rgb=True,
         show_edges=False,
-        smooth_shading=False,
-        lighting=True,
+        smooth_shading=smooth_shading,
+        **mesh_lighting,
+    )
+    add_experimental_overlays(
+        plotter=plotter,
+        mesh=mesh,
+        outline=outline,
+        outline_color=outline_color,
+        outline_width=outline_width,
+        silhouette=silhouette,
+        silhouette_color=silhouette_color,
+        silhouette_width=silhouette_width,
     )
 
     camera_distance = camera_distance_for_mesh(
         verts_centered,
         view_angle_degrees=plotter.camera.view_angle,
     )
-    plotter.open_gif(output_file, fps=fps)
-
-    frame_angles = np.arange(0.0, 360.0, degrees_per_frame, dtype=np.float64)
-    for frame_azim in frame_angles:
-        plotter.camera_position = camera_position_from_angles(
-            elev=elev,
-            azim=azim + float(frame_azim),
-            distance=camera_distance,
-        )
-        plotter.camera.parallel_projection = False
-        plotter.reset_camera_clipping_range()
-        plotter.write_frame()
-
+    plotter.camera_position = camera_position_from_angles(
+        elev, azim, camera_distance
+    )
+    plotter.camera.parallel_projection = False
+    plotter.reset_camera_clipping_range()
+    plotter.show(screenshot=output_file, auto_close=False)
     plotter.close()
+
     if crop:
-        crop_gif_symmetrically(
-            gif_path=output_file,
+        crop_image_symmetrically(
+            image_path=output_file,
             background=background,
             pad=crop_pad,
             size_mode=crop_size_mode,
         )
+
     if scale_bar:
-        add_scale_bar_to_gif(
-            gif_path=output_file,
+        add_scale_bar(
+            image_path=output_file,
             box_size_angstrom=box_size_angstrom,
             background=background,
         )
+
     render_elapsed = time.perf_counter() - render_start
-    print(f"Rendered and saved GIF in {render_elapsed:.2f}s: {output_file}")
+    print(f"Rendered and saved image in {render_elapsed:.2f}s: {output_file}")
 
 
 def main():
@@ -1100,7 +1240,7 @@ def main():
             f"{unknown_symmetry_chains}"
         )
 
-    if not args.crop and args.crop_size_mode != "multiple_of_10":
+    if not args.crop and args.crop_size_mode != "multiple_of_100":
         print(
             "Warning: --crop-size-mode was supplied without --crop; "
             "crop sizing will not be applied."
@@ -1114,41 +1254,64 @@ def main():
         if level is None:
             level = np.around((np.amax(volume) / 6.0) + 0.004, decimals=4)
 
-    degrees_per_frame, fps, _ = resolve_animation_settings(args.quality, args.fps)
-
     total_start = time.perf_counter()
-    verts_centered, faces, facecolors = extract_surface(
-        ndimage=volume,
-        angpix=angpix,
-        world_origin=world_origin,
-        cif_file=args.cif_file,
-        chain_groups=chain_groups,
-        symmetry_chain_ids=symmetry_chain_ids,
-        distance_cutoff=args.distance_cutoff,
-        hide_dust=args.hide_dust,
-        dust_volume_cutoff=args.dust_volume_cutoff,
-        level=level,
-        step_size=step_size,
-        cmap_name=args.cmap,
-    )
-    verts_centered = apply_symmetry_operation(verts_centered, args.symop)
-    render_gif(
-        verts_centered=verts_centered,
-        faces=faces,
-        facecolors=facecolors,
-        output_file=args.output_file,
-        elev=args.elev,
-        azim=args.azim,
-        background=args.background,
-        fps=fps,
-        degrees_per_frame=degrees_per_frame,
-        crop=args.crop,
-        crop_pad=args.crop_pad,
-        crop_size_mode=args.crop_size_mode,
-        base_boxsize=args.base_boxsize,
-        scale_bar=args.scale_bar,
-        box_size_angstrom=box_size_angstrom,
-    )
+    cmap_names = AVAILABLE_CMAPS if args.all_cmaps else [args.cmap]
+    symop_indices = range(1, 61) if args.all_symops else [args.symop]
+
+    for cmap_name in cmap_names:
+        verts_centered, faces, facecolors = extract_surface(
+            ndimage=volume,
+            angpix=angpix,
+            world_origin=world_origin,
+            cif_file=args.cif_file,
+            chain_groups=chain_groups,
+            symmetry_chain_ids=symmetry_chain_ids,
+            distance_cutoff=args.distance_cutoff,
+            hide_dust=args.hide_dust,
+            dust_volume_cutoff=args.dust_volume_cutoff,
+            level=level,
+            step_size=step_size,
+            cmap_name=cmap_name,
+        )
+
+        for symop_index in symop_indices:
+            rotated_verts = apply_symmetry_operation(verts_centered, symop_index)
+
+            output_file = Path(args.output_file)
+            if args.all_cmaps:
+                output_file = output_path_for_cmap(output_file, cmap_name)
+            if args.all_symops:
+                output_file = output_path_for_symop(output_file, symop_index)
+
+            render_surface(
+                verts_centered=rotated_verts,
+                faces=faces,
+                facecolors=facecolors,
+                output_file=str(output_file),
+                elev=args.elev,
+                azim=args.azim,
+                background=args.background,
+                window_size=(
+                    (args.base_boxsize, args.base_boxsize)
+                    if args.base_boxsize is not None
+                    else tuple(args.window_size)
+                ),
+                crop=args.crop,
+                crop_pad=args.crop_pad,
+                crop_size_mode=args.crop_size_mode,
+                scale_bar=args.scale_bar,
+                box_size_angstrom=box_size_angstrom,
+                lighting_preset=args.lighting_preset,
+                smooth_shading=args.smooth_shading,
+                shadows=args.shadows,
+                outline=args.outline,
+                outline_color=args.outline_color,
+                outline_width=args.outline_width,
+                silhouette=args.silhouette,
+                silhouette_color=args.silhouette_color,
+                silhouette_width=args.silhouette_width,
+            )
+
     total_elapsed = time.perf_counter() - total_start
     print(f"Total render pipeline time: {total_elapsed:.2f}s")
 
