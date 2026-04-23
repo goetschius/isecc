@@ -49,6 +49,8 @@ QUALITY_PRESETS = {
     "good": {"degrees_per_frame": 4.0, "fps": 18},
     "better": {"degrees_per_frame": 2.0, "fps": 20},
     "best": {"degrees_per_frame": 1.0, "fps": 24},
+    "excellent": {"degrees_per_frame": 0.5, "fps": 24},
+    "superb": {"degrees_per_frame": 0.25, "fps": 24},
 }
 
 

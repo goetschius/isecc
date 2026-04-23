@@ -36,7 +36,8 @@ def build_mask(volume_shape, angstrom_per_pixel, shape_name, dimensions, orienta
 
     if shape_name == "sphere":
         radius = float(dimensions["sphere_radius"])
-        return ((xx ** 2) + (yy ** 2) + (zz ** 2) <= radius ** 2).astype(np.float32)
+        z_offset = float(dimensions["sphere_z_offset"])
+        return ((xx ** 2) + (yy ** 2) + ((zz - z_offset) ** 2) <= radius ** 2).astype(np.float32)
 
     if shape_name == "square-cube":
         half_extent = float(dimensions["cube_x"]) / 2.0
@@ -86,6 +87,7 @@ def mask_summary(shape_name, dimensions, orientation):
     parts = [f"Mask: {display_names.get(shape_name, shape_name)}"]
     if shape_name == "sphere":
         parts.append(f"Radius {float(dimensions['sphere_radius']):.2f} A")
+        parts.append(f"Z offset {float(dimensions['sphere_z_offset']):.2f} A")
     elif shape_name == "square-cube":
         parts.append(f"Edge {float(dimensions['cube_x']):.2f} A")
     elif shape_name == "cylinder":
@@ -100,12 +102,13 @@ def mask_summary(shape_name, dimensions, orientation):
 
 
 class MrcMaskHelper(QtWidgets.QWidget):
-    def __init__(self, input_path=None):
+    def __init__(self, input_path=None, defaults=None):
         super().__init__()
         self.setWindowTitle("MRC Mask Helper")
         self.resize(520, 0)
         self.volume = None
         self.angstrom_per_pixel = 1.0
+        self.defaults = defaults or {}
         self._build_ui()
         if input_path is not None:
             self.input_edit.setText(str(input_path))
@@ -149,6 +152,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
         self.form.addRow("Shape", self.shape_combo)
 
         self.sphere_radius_spin = self._make_length_spinbox()
+        self.sphere_z_offset_spin = self._make_signed_length_spinbox()
         self.cylinder_radius_spin = self._make_length_spinbox()
         self.cylinder_height_spin = self._make_length_spinbox()
         self.cube_x_spin = self._make_length_spinbox()
@@ -161,6 +165,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
         self.orientation_combo.setCurrentIndex(2)
 
         self._add_shape_row("sphere_radius", "Sphere radius", self.sphere_radius_spin)
+        self._add_shape_row("sphere_z_offset", "Center Z offset", self.sphere_z_offset_spin)
         self._add_shape_row("cylinder_radius", "Cylinder radius", self.cylinder_radius_spin)
         self._add_shape_row("cylinder_height", "Cylinder height", self.cylinder_height_spin)
         self._add_shape_row("cube_x", "Cube X", self.cube_x_spin)
@@ -215,6 +220,15 @@ class MrcMaskHelper(QtWidgets.QWidget):
         spin.setDecimals(2)
         spin.setSingleStep(1.0)
         spin.setSuffix(" A")
+        return spin
+
+    def _make_signed_length_spinbox(self):
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(-1_000_000.0, 1_000_000.0)
+        spin.setDecimals(2)
+        spin.setSingleStep(1.0)
+        spin.setSuffix(" A")
+        spin.setValue(0.0)
         return spin
 
     def _add_shape_row(self, key, label_text, field_widget):
@@ -280,11 +294,24 @@ class MrcMaskHelper(QtWidgets.QWidget):
         box_angstrom = np.array(self.volume.shape[::-1], dtype=np.float32) * float(self.angstrom_per_pixel)
         min_extent = float(np.min(box_angstrom))
         self.sphere_radius_spin.setValue(round(min_extent * 0.25, 2))
+        self.sphere_z_offset_spin.setValue(0.0)
         self.cube_x_spin.setValue(round(min_extent, 2))
         self.cylinder_radius_spin.setValue(round(min_extent * 0.20, 2))
         self.cylinder_height_spin.setValue(round(min_extent, 2))
         self.cube_y_spin.setValue(round(min_extent, 2))
         self.cube_z_spin.setValue(round(min_extent, 2))
+        self._apply_launch_defaults()
+
+    def _apply_launch_defaults(self):
+        if not self.defaults:
+            return
+        shape_name = self.defaults.get("shape")
+        if shape_name in {"sphere", "square-cube", "cylinder", "rectangle-cube"}:
+            self.shape_combo.setCurrentText(shape_name)
+        if "sphere_radius" in self.defaults:
+            self.sphere_radius_spin.setValue(float(self.defaults["sphere_radius"]))
+        if "sphere_z_offset" in self.defaults:
+            self.sphere_z_offset_spin.setValue(float(self.defaults["sphere_z_offset"]))
 
     def _set_default_outputs(self, input_path):
         shape_name = self.shape_combo.currentText()
@@ -296,7 +323,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
     def _update_shape_controls(self):
         shape_name = self.shape_combo.currentText()
         visible_rows = {
-            "sphere": {"sphere_radius"},
+            "sphere": {"sphere_radius", "sphere_z_offset"},
             "square-cube": {"cube_x"},
             "cylinder": {"cylinder_radius", "cylinder_height", "orientation"},
             "rectangle-cube": {"cube_x", "cube_y", "cube_z"},
@@ -319,6 +346,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
         shape_name = self.shape_combo.currentText()
         dimensions = {
             "sphere_radius": float(self.sphere_radius_spin.value()),
+            "sphere_z_offset": float(self.sphere_z_offset_spin.value()),
             "cylinder_radius": float(self.cylinder_radius_spin.value()),
             "cylinder_height": float(self.cylinder_height_spin.value()),
             "cube_x": float(self.cube_x_spin.value()),
@@ -385,7 +413,13 @@ class MrcMaskHelper(QtWidgets.QWidget):
 def main():
     app = QtWidgets.QApplication(sys.argv)
     input_path = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
-    window = MrcMaskHelper(input_path=input_path)
+    defaults = {}
+    if len(sys.argv) > 2:
+        try:
+            defaults = json.loads(sys.argv[2])
+        except json.JSONDecodeError:
+            defaults = {}
+    window = MrcMaskHelper(input_path=input_path, defaults=defaults)
     window.show()
     return app.exec()
 

@@ -699,7 +699,7 @@ class VispyIsosurfaceWidget(QtWidgets.QWidget):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MRC Isosurface Rotation Viewer (VisPy)")
+        self.setWindowTitle("ISECC Volume Workbench")
         self.resize(980, 720)
 
         self.volume = None
@@ -1099,9 +1099,28 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.current_file is None:
             QtWidgets.QMessageBox.information(self, "Mask Tool", "Load an MRC file first.")
             return
+        helper_defaults = {}
+        sphere_state = self.viewer.get_sphere_state()
+        if (
+            sphere_state.get("visible")
+            and sphere_state.get("target_key") == "twofold"
+            and sphere_state.get("center_xyz") is not None
+        ):
+            center = np.asarray(sphere_state["center_xyz"], dtype=np.float32)
+            helper_defaults = {
+                "shape": "sphere",
+                "sphere_radius": float(sphere_state["radius_angstrom"]),
+                "sphere_z_offset": float(center[2]),
+            }
         proc = QtCore.QProcess(self)
         proc.setProgram(sys.executable)
-        proc.setArguments([str(REPO_DIR / "mrc_mask_helper.py"), str(self.current_file)])
+        proc.setArguments(
+            [
+                str(REPO_DIR / "mrc_mask_helper.py"),
+                str(self.current_file),
+                json.dumps(helper_defaults),
+            ]
+        )
         proc.setWorkingDirectory(str(REPO_DIR))
         proc.setProcessChannelMode(QtCore.QProcess.MergedChannels)
         proc._stdout_buffer = ""

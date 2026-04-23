@@ -57,6 +57,7 @@ FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
 )
+LIGHTING_PRESETS = ("flat", "balanced", "dramatic")
 QUALITY_PRESETS = {
     "fast": {"degrees_per_frame": 6.0, "fps": 15},
     "good": {"degrees_per_frame": 4.0, "fps": 18},
@@ -66,15 +67,24 @@ QUALITY_PRESETS = {
     "superb": {"degrees_per_frame": 0.25, "fps": 24},
 }
 
+MAJOR_HEAD_PALETTE = "Blues"
+MINOR_HEAD1_PALETTE = "Oranges"
+MINOR_HEAD2_PALETTE = "Reds"
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Render an animated GIF isosurface view from an MRC volume using "
-            "PyVista, with optional chain-aware coloring from an mmCIF model."
+            "Render an animated GIF isosurface view for the KEN10 map using "
+            "three component mmCIF models for fixed component-aware coloring."
         )
     )
-    parser.add_argument("input_file", nargs="?", help="Path to the input MRC file")
+    parser.add_argument(
+        "input_file",
+        nargs="?",
+        default=str(Path(__file__).with_name("KEN10.mrc")),
+        help="Path to the input MRC file.",
+    )
     parser.add_argument("output_file", nargs="?", help="Path to the output GIF file")
     parser.add_argument(
         "--list-palettes",
@@ -82,35 +92,25 @@ def parse_args():
         help="Print available palette names and exit.",
     )
     parser.add_argument(
-        "--cif-file",
-        default=str(Path(__file__).with_name("7M3N.cif")),
-        help="Path to the mmCIF file used for chain-aware recoloring.",
-    )
-    parser.add_argument(
         "--distance-cutoff",
         type=float,
         default=4.0,
-        help="Distance in Angstroms used to recolor isosurface faces near chains.",
+        help="Distance in Angstroms used to recolor isosurface faces near model atoms.",
     )
     parser.add_argument(
-        "--chain-palette",
-        action="append",
-        default=[],
-        metavar="CHAINS:PALETTE",
-        help=(
-            "Assign a palette to one chain or a comma-separated chain group, for "
-            "example 'A:YlOrRd' or 'H,L:PuBuGn'. Repeat up to 10 times."
-        ),
+        "--major-head-cif",
+        default=str(Path(__file__).with_name("10u_mcp-job113_filtered.cif")),
+        help="Path to the major head mmCIF file.",
     )
     parser.add_argument(
-        "--symmetry-copy-chains",
-        action="append",
-        default=[],
-        metavar="CHAINS",
-        help=(
-            "Generate icosahedral symmetry copies for the listed chain IDs before "
-            "distance coloring, for example 'A' or 'H,L'. Repeat as needed."
-        ),
+        "--minor-head1-cif",
+        default=str(Path(__file__).with_name("10v_minorHead1-job114-filtered.cif")),
+        help="Path to the minor head 1 mmCIF file.",
+    )
+    parser.add_argument(
+        "--minor-head2-cif",
+        default=str(Path(__file__).with_name("10w-minorHead2-job115_filtered.cif")),
+        help="Path to the minor head 2 mmCIF file.",
     )
     parser.add_argument(
         "--angpix",
@@ -169,6 +169,54 @@ def parse_args():
         help="Background color for the rendered GIF.",
     )
     parser.add_argument(
+        "--lighting-preset",
+        choices=LIGHTING_PRESETS,
+        default="balanced",
+        help="Experimental lighting preset for the rendered surface.",
+    )
+    parser.add_argument(
+        "--smooth-shading",
+        action="store_true",
+        help="Use smooth shading instead of faceted shading.",
+    )
+    parser.add_argument(
+        "--shadows",
+        action="store_true",
+        help="Enable renderer shadows when supported by the local PyVista/VTK build.",
+    )
+    parser.add_argument(
+        "--silhouette",
+        action="store_true",
+        help="Add a silhouette overlay around the rendered surface.",
+    )
+    parser.add_argument(
+        "--silhouette-color",
+        default="black",
+        help="Color used for the silhouette overlay.",
+    )
+    parser.add_argument(
+        "--silhouette-width",
+        type=float,
+        default=None,
+        help="Line width used for the silhouette overlay. Defaults to an auto-scaled value based on render size.",
+    )
+    parser.add_argument(
+        "--outline",
+        action="store_true",
+        help="Add a wireframe outline overlay on top of the surface.",
+    )
+    parser.add_argument(
+        "--outline-color",
+        default="black",
+        help="Color used for the outline overlay.",
+    )
+    parser.add_argument(
+        "--outline-width",
+        type=float,
+        default=1.5,
+        help="Line width used for the outline overlay.",
+    )
+    parser.add_argument(
         "--symop",
         type=int,
         default=1,
@@ -193,6 +241,18 @@ def parse_args():
         type=int,
         default=None,
         help="Frames per second for the output GIF. Overrides the --quality preset.",
+    )
+    parser.add_argument(
+        "--total-rotation",
+        type=float,
+        default=360.0,
+        help="Total azimuth rotation in degrees covered by the GIF.",
+    )
+    parser.add_argument(
+        "--speed-scale",
+        type=float,
+        default=1.0,
+        help="Playback speed multiplier. Values below 1.0 slow the motion down.",
     )
     parser.add_argument(
         "--base-boxsize",
@@ -264,77 +324,24 @@ def validate_required_paths(args):
         )
 
 
-def parse_chain_list(chain_text):
-    chain_ids = [chain_id.strip() for chain_id in chain_text.split(",") if chain_id.strip()]
-    if not chain_ids:
-        raise ValueError("Expected at least one chain ID")
-    return tuple(chain_ids)
-
-
-def parse_chain_palette_specs(chain_palette_specs):
-    if not chain_palette_specs:
-        return [
-            {
-                "label": CHAIN_A_LABEL,
-                "chain_ids": ("A",),
-                "palette": CHAIN_A_PALETTE,
-            },
-            {
-                "label": CHAIN_HL_LABEL,
-                "chain_ids": ("H", "L"),
-                "palette": CHAIN_HL_PALETTE,
-            },
-        ]
-
-    if len(chain_palette_specs) > MAX_CHAIN_COLOR_GROUPS:
-        raise ValueError(
-            f"--chain-palette may be supplied at most {MAX_CHAIN_COLOR_GROUPS} times"
-        )
-
-    chain_groups = []
-    assigned_chains = {}
-    for spec in chain_palette_specs:
-        if ":" not in spec:
-            raise ValueError(
-                f"Invalid --chain-palette value '{spec}'. Use CHAINS:PALETTE."
-            )
-
-        chain_text, palette_name = spec.split(":", 1)
-        chain_ids = parse_chain_list(chain_text)
-        palette_name = palette_name.strip()
-        if not palette_name:
-            raise ValueError(
-                f"Invalid --chain-palette value '{spec}'. Palette name is required."
-            )
-
-        get_colormap(palette_name)
-
-        duplicates = [chain_id for chain_id in chain_ids if chain_id in assigned_chains]
-        if duplicates:
-            raise ValueError(
-                f"Chain IDs {duplicates} were assigned more than one palette group."
-            )
-
-        label = ",".join(chain_ids)
-        chain_groups.append(
-            {
-                "label": label,
-                "chain_ids": chain_ids,
-                "palette": palette_name,
-            }
-        )
-
-        for chain_id in chain_ids:
-            assigned_chains[chain_id] = label
-
-    return chain_groups
-
-
-def parse_symmetry_copy_specs(symmetry_copy_specs):
-    symmetry_chain_ids = set()
-    for spec in symmetry_copy_specs:
-        symmetry_chain_ids.update(parse_chain_list(spec))
-    return symmetry_chain_ids
+def build_component_specs(args):
+    return [
+        {
+            "label": "Major head",
+            "palette": MAJOR_HEAD_PALETTE,
+            "cif_file": args.major_head_cif,
+        },
+        {
+            "label": "Minor head 1",
+            "palette": MINOR_HEAD1_PALETTE,
+            "cif_file": args.minor_head1_cif,
+        },
+        {
+            "label": "Minor head 2",
+            "palette": MINOR_HEAD2_PALETTE,
+            "cif_file": args.minor_head2_cif,
+        },
+    ]
 
 
 def load_volume(input_file):
@@ -400,14 +407,25 @@ def resolve_world_origin(origin, starts, angpix):
     return world_origin
 
 
-def resolve_animation_settings(quality, fps_override):
+def resolve_animation_settings(
+    quality,
+    fps_override,
+    total_rotation=360.0,
+    speed_scale=1.0,
+):
     settings = QUALITY_PRESETS[quality]
     degrees_per_frame = settings["degrees_per_frame"]
     fps = settings["fps"] if fps_override is None else fps_override
-    num_frames = max(1, int(np.ceil(360.0 / degrees_per_frame)))
+    if total_rotation <= 0:
+        raise ValueError(f"--total-rotation must be positive, got {total_rotation}")
+    if speed_scale <= 0:
+        raise ValueError(f"--speed-scale must be positive, got {speed_scale}")
+
+    fps = max(1, int(round(fps * speed_scale)))
+    num_frames = max(1, int(np.ceil(total_rotation / degrees_per_frame)))
     print(
         f"Animation quality '{quality}': {degrees_per_frame:.2f} degrees/frame, "
-        f"{num_frames} frames, {fps} fps"
+        f"{num_frames} frames over {total_rotation:.2f} degrees, {fps} fps"
     )
     return degrees_per_frame, fps, num_frames
 
@@ -498,18 +516,13 @@ def iterate_mmcif_loop_rows(cif_path, category_prefix):
         return
 
 
-def load_chain_coordinates_from_cif(cif_file, chain_ids):
-    requested = set(chain_ids)
+def load_all_atom_coordinates_from_cif(cif_file):
     atom_rows = iterate_mmcif_loop_rows(cif_file, "_atom_site.")
-    chain_coords = {chain_id: [] for chain_id in requested}
+    coords = []
 
     for row in atom_rows:
-        chain_id = row.get("_atom_site.auth_asym_id")
-        if chain_id not in requested:
-            continue
-
         try:
-            coords = (
+            atom_coords = (
                 float(row["_atom_site.Cartn_x"]),
                 float(row["_atom_site.Cartn_y"]),
                 float(row["_atom_site.Cartn_z"]),
@@ -521,47 +534,12 @@ def load_chain_coordinates_from_cif(cif_file, chain_ids):
         if model_num not in {"1", ".", "?"}:
             continue
 
-        chain_coords[chain_id].append(coords)
+        coords.append(atom_coords)
 
-    missing = [chain_id for chain_id, coords in chain_coords.items() if not coords]
-    if missing:
-        raise RuntimeError(
-            f"Did not find atomic coordinates for chains {missing} in {cif_file}"
-        )
+    if not coords:
+        raise RuntimeError(f"Did not find any atomic coordinates in {cif_file}")
 
-    return {
-        chain_id: np.asarray(coords, dtype=np.float64)
-        for chain_id, coords in chain_coords.items()
-    }
-
-
-def get_all_symmetry_rotations():
-    rotations = []
-    for pyquat in symops.getSymOps():
-        scipy_quat = iseccFFT_v3.pyquat2scipy(pyquat)
-        rotations.append(R.from_quat(scipy_quat))
-    return rotations
-
-
-def expand_coordinates_with_symmetry(chain_coords, symmetry_chain_ids):
-    if not symmetry_chain_ids:
-        return chain_coords
-
-    rotations = get_all_symmetry_rotations()
-    expanded = {}
-    for chain_id, coords in chain_coords.items():
-        if chain_id not in symmetry_chain_ids:
-            expanded[chain_id] = coords
-            continue
-
-        symmetry_copies = [rotation.apply(coords) for rotation in rotations]
-        expanded[chain_id] = np.vstack(symmetry_copies)
-        print(
-            f"Expanded chain {chain_id} to {expanded[chain_id].shape[0]} atoms "
-            f"across {len(rotations)} symmetry operators"
-        )
-
-    return expanded
+    return np.asarray(coords, dtype=np.float64)
 
 
 def build_group_palette(normalized_values, palette_name):
@@ -574,17 +552,16 @@ def recolor_faces_by_chain_proximity(
     centroids_world,
     base_facecolors,
     radial_normalized,
-    chain_groups,
-    chain_coords,
+    component_specs,
+    component_coords,
     cutoff,
 ):
     from scipy.spatial import cKDTree
 
     colors = np.array(base_facecolors, copy=True)
     group_distances = []
-    for group in chain_groups:
-        coords = np.vstack([chain_coords[chain_id] for chain_id in group["chain_ids"]])
-        tree = cKDTree(coords)
+    for component in component_specs:
+        tree = cKDTree(component_coords[component["label"]])
         distances, _ = tree.query(
             centroids_world,
             k=1,
@@ -597,18 +574,18 @@ def recolor_faces_by_chain_proximity(
     any_match = np.any(valid_matrix, axis=0)
     nearest_group_indices = np.argmin(distance_matrix, axis=0)
 
-    for group_index, group in enumerate(chain_groups):
+    for group_index, component in enumerate(component_specs):
         mask = any_match & (nearest_group_indices == group_index)
         if np.any(mask):
             colors[mask] = build_group_palette(
                 radial_normalized[mask],
-                palette_name=group["palette"],
+                palette_name=component["palette"],
             )
 
         print(
-            f"Chains {','.join(group['chain_ids'])}: recolored "
+            f"{component['label']}: recolored "
             f"{int(np.count_nonzero(mask))} faces within {cutoff:.2f} Å using "
-            f"{group['palette']}"
+            f"{component['palette']}"
         )
 
     return colors
@@ -618,9 +595,7 @@ def extract_surface(
     ndimage,
     angpix,
     world_origin,
-    cif_file=None,
-    chain_groups=None,
-    symmetry_chain_ids=None,
+    component_specs=None,
     distance_cutoff=4.0,
     hide_dust=False,
     dust_volume_cutoff=4.0,
@@ -675,30 +650,19 @@ def extract_surface(
     colormap = get_colormap(cmap_name)
     facecolors = (colormap(normalized)[:, :3] * 255).astype(np.uint8)
 
-    if cif_file is not None and chain_groups:
-        requested_chain_ids = sorted(
-            {
-                chain_id
-                for group in chain_groups
-                for chain_id in group["chain_ids"]
-            }
-        )
-        chain_coords = load_chain_coordinates_from_cif(
-            cif_file=cif_file,
-            chain_ids=requested_chain_ids,
-        )
-        chain_coords = expand_coordinates_with_symmetry(
-            chain_coords=chain_coords,
-            symmetry_chain_ids=symmetry_chain_ids or set(),
-        )
+    if component_specs:
+        component_coords = {
+            component["label"]: load_all_atom_coordinates_from_cif(component["cif_file"])
+            for component in component_specs
+        }
         triangles_world = verts_world[faces]
         centroids_world = triangles_world.mean(axis=1)
         facecolors = recolor_faces_by_chain_proximity(
             centroids_world=centroids_world,
             base_facecolors=facecolors,
             radial_normalized=normalized,
-            chain_groups=chain_groups,
-            chain_coords=chain_coords,
+            component_specs=component_specs,
+            component_coords=component_coords,
             cutoff=distance_cutoff,
         )
 
@@ -1000,6 +964,100 @@ def add_scale_bar_to_gif(gif_path, box_size_angstrom, background="white"):
         print(f"Added GIF scale bar: {bar_length_angstrom} Å")
 
 
+def resolve_auto_silhouette_width(render_width, override_width=None):
+    if override_width is not None:
+        return override_width
+
+    auto_width = render_width / 685.0
+    auto_width = max(0.375, min(3.0, auto_width))
+    print(
+        f"Auto silhouette width: {auto_width:.2f} px for render width {render_width}"
+    )
+    return auto_width
+
+
+def lighting_kwargs_for_preset(lighting_preset):
+    if lighting_preset == "flat":
+        return {
+            "lighting": False,
+            "ambient": 1.0,
+            "diffuse": 0.0,
+            "specular": 0.0,
+            "specular_power": 1.0,
+        }
+    if lighting_preset == "dramatic":
+        return {
+            "lighting": True,
+            "ambient": 0.18,
+            "diffuse": 0.75,
+            "specular": 0.35,
+            "specular_power": 20.0,
+        }
+
+    return {
+        "lighting": True,
+        "ambient": 0.30,
+        "diffuse": 0.65,
+        "specular": 0.12,
+        "specular_power": 10.0,
+    }
+
+
+def add_experimental_overlays(
+    plotter,
+    mesh,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=3.0,
+):
+    if outline:
+        plotter.add_mesh(
+            mesh.copy(deep=True),
+            color=outline_color,
+            opacity=0.0,
+            lighting=False,
+            silhouette={
+                "color": outline_color,
+                "line_width": outline_width,
+            },
+        )
+
+    if silhouette:
+        try:
+            plotter.add_mesh(
+                mesh.copy(deep=True),
+                color=silhouette_color,
+                opacity=0.0,
+                lighting=False,
+                silhouette={
+                    "color": silhouette_color,
+                    "line_width": silhouette_width,
+                },
+            )
+        except Exception:
+            try:
+                silhouette_mesh = mesh.extract_feature_edges(
+                    boundary_edges=True,
+                    feature_edges=False,
+                    manifold_edges=False,
+                    non_manifold_edges=False,
+                )
+                if silhouette_mesh.n_cells > 0:
+                    plotter.add_mesh(
+                        silhouette_mesh,
+                        color=silhouette_color,
+                        line_width=silhouette_width,
+                        lighting=False,
+                    )
+                else:
+                    print("Silhouette overlay produced no visible boundary edges for this mesh")
+            except Exception as exc:
+                print(f"Silhouette overlay is unavailable in this environment: {exc}")
+
+
 def render_gif(
     verts_centered,
     faces,
@@ -1010,12 +1068,22 @@ def render_gif(
     background="white",
     fps=24,
     degrees_per_frame=2.0,
+    total_rotation=360.0,
     crop=False,
     crop_pad=0,
     crop_size_mode="multiple_of_10",
     base_boxsize=512,
     scale_bar=False,
     box_size_angstrom=None,
+    lighting_preset="balanced",
+    smooth_shading=False,
+    shadows=False,
+    outline=False,
+    outline_color="black",
+    outline_width=1.5,
+    silhouette=False,
+    silhouette_color="black",
+    silhouette_width=None,
 ):
     try:
         import pyvista as pv
@@ -1027,16 +1095,36 @@ def render_gif(
 
     render_start = time.perf_counter()
     mesh = make_pyvista_mesh(verts_centered, faces, facecolors)
+    mesh_lighting = lighting_kwargs_for_preset(lighting_preset)
+    silhouette_width = resolve_auto_silhouette_width(
+        render_width=base_boxsize,
+        override_width=silhouette_width,
+    )
 
     plotter = pv.Plotter(off_screen=True, window_size=(base_boxsize, base_boxsize))
     plotter.set_background(background)
+    if shadows and mesh_lighting["lighting"]:
+        try:
+            plotter.enable_shadows()
+        except Exception as exc:
+            print(f"Shadow rendering is unavailable in this environment: {exc}")
     plotter.add_mesh(
         mesh,
         scalars="face_rgb",
         rgb=True,
         show_edges=False,
-        smooth_shading=False,
-        lighting=True,
+        smooth_shading=smooth_shading,
+        **mesh_lighting,
+    )
+    add_experimental_overlays(
+        plotter=plotter,
+        mesh=mesh,
+        outline=outline,
+        outline_color=outline_color,
+        outline_width=outline_width,
+        silhouette=silhouette,
+        silhouette_color=silhouette_color,
+        silhouette_width=silhouette_width,
     )
 
     camera_distance = camera_distance_for_mesh(
@@ -1045,7 +1133,7 @@ def render_gif(
     )
     plotter.open_gif(output_file, fps=fps)
 
-    frame_angles = np.arange(0.0, 360.0, degrees_per_frame, dtype=np.float64)
+    frame_angles = np.arange(0.0, total_rotation, degrees_per_frame, dtype=np.float64)
     for frame_azim in frame_angles:
         plotter.camera_position = camera_position_from_angles(
             elev=elev,
@@ -1081,26 +1169,11 @@ def main():
         print_available_palettes()
         return
 
-    chain_groups = parse_chain_palette_specs(args.chain_palette)
-    symmetry_chain_ids = parse_symmetry_copy_specs(args.symmetry_copy_chains)
+    component_specs = build_component_specs(args)
     volume, header_angpix, origin, starts = load_volume(args.input_file)
     angpix = resolve_angpix(args.angpix, header_angpix)
     world_origin = resolve_world_origin(origin, starts, angpix)
     box_size_angstrom = volume.shape[0] * angpix
-
-    unknown_symmetry_chains = sorted(
-        symmetry_chain_ids
-        - {
-            chain_id
-            for group in chain_groups
-            for chain_id in group["chain_ids"]
-        }
-    )
-    if unknown_symmetry_chains:
-        raise ValueError(
-            "--symmetry-copy-chains referenced chains without a palette group: "
-            f"{unknown_symmetry_chains}"
-        )
 
     if not args.crop and args.crop_size_mode != "multiple_of_10":
         print(
@@ -1116,16 +1189,19 @@ def main():
         if level is None:
             level = np.around((np.amax(volume) / 6.0) + 0.004, decimals=4)
 
-    degrees_per_frame, fps, _ = resolve_animation_settings(args.quality, args.fps)
+    degrees_per_frame, fps, _ = resolve_animation_settings(
+        args.quality,
+        args.fps,
+        total_rotation=args.total_rotation,
+        speed_scale=args.speed_scale,
+    )
 
     total_start = time.perf_counter()
     verts_centered, faces, facecolors = extract_surface(
         ndimage=volume,
         angpix=angpix,
         world_origin=world_origin,
-        cif_file=args.cif_file,
-        chain_groups=chain_groups,
-        symmetry_chain_ids=symmetry_chain_ids,
+        component_specs=component_specs,
         distance_cutoff=args.distance_cutoff,
         hide_dust=args.hide_dust,
         dust_volume_cutoff=args.dust_volume_cutoff,
@@ -1144,12 +1220,22 @@ def main():
         background=args.background,
         fps=fps,
         degrees_per_frame=degrees_per_frame,
+        total_rotation=args.total_rotation,
         crop=args.crop,
         crop_pad=args.crop_pad,
         crop_size_mode=args.crop_size_mode,
         base_boxsize=args.base_boxsize,
         scale_bar=args.scale_bar,
         box_size_angstrom=box_size_angstrom,
+        lighting_preset=args.lighting_preset,
+        smooth_shading=args.smooth_shading,
+        shadows=args.shadows,
+        outline=args.outline,
+        outline_color=args.outline_color,
+        outline_width=args.outline_width,
+        silhouette=args.silhouette,
+        silhouette_color=args.silhouette_color,
+        silhouette_width=args.silhouette_width,
     )
     total_elapsed = time.perf_counter() - total_start
     print(f"Total render pipeline time: {total_elapsed:.2f}s")
