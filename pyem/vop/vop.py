@@ -111,7 +111,7 @@ def interpolate_slice(f3d, rot, pfac=2, size=None):
     mcoords = mcoords[:, pr.reshape(-1) < nhalf]
     pvals = map_coordinates(np.real(f3d), mcoords, order=1, mode="wrap") + \
              1j * map_coordinates(np.imag(f3d), mcoords, order=1, mode="wrap")
-    pslice = np.zeros(pr.shape, dtype=np.complex)
+    pslice = np.zeros(pr.shape, dtype=complex)
     pslice[pr < nhalf] = pvals
     return pslice
 

@@ -39,12 +39,12 @@ def binary_volume_opening(vol, minvol):
         return vol.copy()
     lb_vol, num_objs = label(vol)
     lbs = np.arange(1, num_objs + 1)
-    v = labeled_comprehension(lb_vol > 0, lb_vol, lbs, np.sum, np.int, 0)
+    v = labeled_comprehension(lb_vol > 0, lb_vol, lbs, np.sum, int, 0)
     if minvol < 0:
         ix = np.isin(lb_vol, lbs[np.argsort(v)[minvol:]])
     else:
         ix = np.isin(lb_vol, lbs[v >= minvol])
-    newvol = np.zeros(vol.shape, dtype=np.bool)
+    newvol = np.zeros(vol.shape, dtype=bool)
     newvol[ix] = vol[ix]
     return newvol
 
@@ -68,4 +68,3 @@ def binarize_volume(vol, t, minvol=0, fill=False):
     if fill:
         mask = binary_fill_holes(mask)
     return mask
-

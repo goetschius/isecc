@@ -201,7 +201,7 @@ def maskCapsomer( capsomer, correction_mask, vector, capsomer_centers ):
             mask = gold_distance <= dist_from_center
             #mask_edge = gold_distance == dist_from_center
             #equidistance_mask = equidistance_mask + mask_edge
-            capsomer_mask = capsomer_mask * mask.astype(np.int)
+            capsomer_mask = capsomer_mask * mask.astype(int)
             #print( np.unique(equidistance_mask) )
 
     """ At this point, capsomer_mask contains all voxels belonging to the given capsomer """
@@ -219,7 +219,7 @@ def maskCapsomer( capsomer, correction_mask, vector, capsomer_centers ):
     #print( "Unique values in capsomer mask", np.unique(capsomer_mask) )
 
     """ Only take the capsomer_mask where capsomer map has values """
-    capsomer_bool = (capsomer!=0).astype(np.int)
+    capsomer_bool = (capsomer!=0).astype(int)
     capsomer_mask = capsomer_mask * capsomer_bool
 
     """ Multiply by mask """
@@ -319,10 +319,10 @@ def stitchCapsomers( mrc_pentavalent, mrc_hexavalent, vector_pent, vector_hex, m
     """ Store the centers. Rotate before converting to ZYX ordering """
     for index, symop in enumerate(symops_pent, start=0):    # papillomavirus and polyomavirus
         center = Quaternion(symop).inverse.rotate(vector_pentavalent)
-        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(np.int)
+        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(int)
     for index, symop in enumerate(symops_hex, start=len(symops_pent)):    # papillomavirus and polyomavirus
         center = Quaternion(symop).inverse.rotate(vector_hexavalent)
-        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(np.int)
+        capsomer_centers[index] = np.array( [(1*center[2]), (-1*center[1]), (-1*center[0])] ).astype(int)
 
     """ Adjust the pentavalent capsomers """
     for index, symop in enumerate(symops_pent, start=0): 
@@ -390,4 +390,3 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, help="name for output mrc file", default='icosahedron.mrc')
     parser.add_argument("--angpix", type=float, help="pixel size in the input maps", default='1.1')
     sys.exit(main(parser.parse_args()))
-

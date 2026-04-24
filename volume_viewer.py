@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
@@ -10,11 +11,10 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 import scipy as sp
 from matplotlib import cm
-import sys
 from isecc import utils
 from isecc import iseccFFT_v3
 
-def plot3dimage( ndimage ):
+def plot3dimage( ndimage, output_file ):
     angpix = 2.2
     correction = np.array([angpix,angpix,angpix])
     axis_pix = int(ndimage.shape[0])
@@ -26,15 +26,15 @@ def plot3dimage( ndimage ):
     x,y,z = np.ogrid[0:axis_pix, 0:axis_pix, 0:axis_pix]
 #    x,y,z = np.ogrid[0:axis:axis_pix, 0:axis:axis_pix, 0:axis:axis_pix]
 
-    radii = np.zeros( [1,], dtype=np.float )
+    radii = np.zeros( [1,], dtype=float )
 
     threshold = np.around( ( (np.amax(ndimage) / 10) + 0.004 ), decimals=4 )
 
     colormap = np.array(cm.viridis.colors)
     colormap = np.array(cm.plasma.colors)
 
-    verts, faces, normals, values = measure.marching_cubes_lewiner( ndimage, step_size=2, level=threshold )
-    #verts, faces, normals, values = measure.marching_cubes_lewiner( ndimage, step_size=4, level=0.0078 )
+    verts, faces, normals, values = measure.marching_cubes( ndimage, step_size=2, level=threshold )
+    #verts, faces, normals, values = measure.marching_cubes( ndimage, step_size=4, level=0.0078 )
 
     fig = plt.figure(figsize=(7.5,7.5))
     ax = fig.add_subplot(111, projection='3d')
@@ -89,19 +89,37 @@ def plot3dimage( ndimage ):
     plt.axis('off')
 #    plt.show()
 
-    plt.savefig( 'mupyv.png', bbox_inches='tight')
+    plt.savefig( output_file, bbox_inches='tight')
 
     return
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Render an isosurface view from an MRC volume.'
+    )
+    parser.add_argument(
+        'input_file',
+        help='Path to the input MRC file',
+    )
+    parser.add_argument(
+        'output_file',
+        help='Path to the output image file',
+    )
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+
+    my_file = mrcfile.open(args.input_file).data
+    my_ndarray = np.copy(my_file)
+    my_ndarray = np.flipud(my_ndarray)
+    #my_ndarray = np.rot90(my_ndarray,k=-1,axes=(0,2))
+    my_ndarray = iseccFFT_v3.swapAxes_ndimage( my_ndarray )
+    #my_ndarray = np.rot90(my_ndarray, k=1, axes=(0,1))
+    del my_file
+
+    plot3dimage( my_ndarray, args.output_file )
 
 
-###
-my_file = mrcfile.open('../MRC/MuPyV_scale.mrc').data
-my_ndarray = np.copy(my_file)
-my_ndarray = np.flipud(my_ndarray)
-#my_ndarray = np.rot90(my_ndarray,k=-1,axes=(0,2))
-my_ndarray = iseccFFT_v3.swapAxes_ndimage( my_ndarray )
-#my_ndarray = np.rot90(my_ndarray, k=1, axes=(0,1))
-del my_file
-
-plot3dimage( my_ndarray )
+if __name__ == '__main__':
+    main()
