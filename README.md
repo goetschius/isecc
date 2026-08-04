@@ -3,7 +3,64 @@ Icosahedral Subparticle Extraction and Correlated Classification
 
 Project transfer from GitLab underway
 
-Versions of ISECC_recombine are currently out-of-date and should not be used.
+Versions of `ISECC_recombine*.py` are out-of-date, should not be used, and have
+been moved to `LEGACY/`.
+
+Versions of `ISECC_local_motions*.py` are historical and have been moved to
+`LEGACY/`.
+
+Versions of `ISECC_correlated_classification*.py` and
+`ISECC_csparc_subparticle_create.py` are historical and have been moved to
+`LEGACY/`.
+
+## CryoSPARC WalkAlongZ Pathway
+
+Use `ISECC_csparc_symmetryexpand.py --walk-along-z` when you want to preserve
+one output particle per input particle, keep the existing poses, and translate
+each particle along its own local Z axis. This replaces the old
+`--no-symmetry-expand` wording, which still works as a legacy alias.
+
+`--subparticle-distance` gives the local-Z distance in Angstroms. Negative
+values walk in the opposite direction, which is useful for reversing a previous
++Z subparticle shift.
+
+Example from the P4/J55 check:
+
+```bash
+/home/daniel/coding/ISECC/isecc/.venv/bin/python \
+  /home/daniel/coding/ISECC/isecc/ISECC_csparc_symmetryexpand.py \
+  /mnt/csparc_storage/CS-psa53/J55/particles_0004.cs \
+  --walk-along-z \
+  --passthrough /mnt/csparc_storage/CS-psa53/J54/J54_passthrough_particles_class_2.cs \
+  --subparticle-distance -117 \
+  --output /mnt/csparc_storage/CS-psa53/J55/J55_particles_0004_WalkAlongZMinus117.cs
+```
+
+## CryoSPARC 3DVA ClusterMatch Pathway
+
+3DVA ClusterMatch: rotate one or more 3DVA particle clusters into a shared pose
+frame, without changing particle translations or defocus.
+
+Use `ISECC_3dva_cluster_match.py` for this pathway. It rotates only
+`alignments3D/pose`, preserving `alignments3D/shift` and CTF defocus fields.
+The old `rotate_cs_particles_about_z.py` filename remains as a legacy wrapper.
+
+Example from the P4/J63 cluster-match run:
+
+```bash
+/home/daniel/coding/ISECC/isecc/.venv/bin/python \
+  /home/daniel/coding/ISECC/isecc/ISECC_3dva_cluster_match.py \
+  --passthrough /mnt/csparc_storage/CS-psa53/J63/J63_passthrough_particles_all_clusters.cs \
+  --output /mnt/csparc_storage/CS-psa53/J63/J63_clusters_000_001_rotZ_0_30deg_combined_particles.cs \
+  --input-rotation /mnt/csparc_storage/CS-psa53/J63/J63_cluster_000_particles.cs 0 \
+  --input-rotation /mnt/csparc_storage/CS-psa53/J63/J63_cluster_001_particles.cs 30
+```
+
+The default rotation mode is `global`, meaning:
+
+```text
+new_pose = z_rotation * original_pose
+```
 
 BUG NOTICE:
 ISECC_star_subparticle_subtract will fail if the input star already has rlnOriginalImageName. 
