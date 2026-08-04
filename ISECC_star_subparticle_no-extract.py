@@ -260,11 +260,11 @@ def prepareSubparticleTable( star_array, user_vector, header, ROI ):
         ## Nearest vertex
         ####
 
-        if (ROI != 'threefold') and (ROI != 'twofold'):
+        if (ROI != 'threefold') and (ROI != 'twofold') and (ROI != 'null'):
             this_particle = returnNearestVertex( this_particle, fivefold_vertices,  'fivefold',  ROI )
-        if (ROI != 'fivefold') and (ROI != 'twofold'):
+        if (ROI != 'fivefold') and (ROI != 'twofold') and (ROI != 'null'):
             this_particle = returnNearestVertex( this_particle, threefold_vertices, 'threefold', ROI )
-        if (ROI != 'fivefold') and (ROI != 'threefold'):
+        if (ROI != 'fivefold') and (ROI != 'threefold') and (ROI != 'null'):
             this_particle = returnNearestVertex( this_particle, twofold_vertices,   'twofold',   ROI )
 
 
@@ -485,7 +485,7 @@ def returnNearestVertex( expanded_user_vector, expanded_vertex, my_vertex, ROI )
                 except:
                     print("Ambiguous Yet Fatal Error. Is your vector roughly equidistant to two or more", ROI, "vertices?" )
                     print("That would be break ASU addresses. Try shifting your vector a bit.")
-                    sys.exit()
+                    #sys.exit()
 
             ####
             ## Add these points into the assigned rotations group
@@ -778,12 +778,12 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
     print( "Executing command:", cmd )
     print( "\n  NOTE: This will take some time..." )
     utils.slowPrint( str('             ...isn\'t it a nice day for a bike ride?') )
-    os.system( cmd )
+    #os.system( cmd )
 
     new_box = str(user_subbox)
     cmd = ''.join( [ 'relion_image_handler --i ', ROI,'.star --o subpart --new_box ', new_box ] )
     print( "\nExecuting command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
 
 
     ### Add comments to roi_subpart.star file
@@ -799,9 +799,9 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
     f.close()
 
     cmd = ' '.join( [ 'cat', filename, ">>", new_filename ] )
-    os.system( cmd )
+    #os.system( cmd )
     cmd = ' '.join( [ 'mv', new_filename, filename ] )
-    os.system( cmd )
+    #os.system( cmd )
 #    filename = new_filename
 
 
@@ -814,7 +814,7 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
 
     cmd = ''.join( ['rm ', particle_files ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
 
 
     ## Make initial model star file from 1st 10k lines of ROI_subpart.star
@@ -822,7 +822,7 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
     initialmodel_star = ''.join( [ ROI, '_initialmodel.star' ] )
     cmd = ''.join( [ 'head -n10000 ', fullfile, ' > ', initialmodel_star ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
 
 
     ## Make initial model
@@ -830,32 +830,32 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
     cmd = ''.join( [ 'relion_reconstruct --i ', initialmodel_star, ' --o ', initialmodel_mrc ,' --ctf --maxres 10 --sym ', model_sym ] )
     print( "\nGenerating initial model" )
     print( "Executing command:", cmd, "\n" )
-    os.system( cmd )
+    #os.system( cmd )
 
     ## Make a copy of the subparticle file for the Priors
     filename = ''.join( [ ROI, '_subpart.star' ] )
     filename_PRIOR = ''.join( [ ROI, '_subpart_PRIOR.star' ] )
     cmd = ' '.join( [ 'cp', filename, filename_PRIOR ] )
     print( "\nExecuting command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
 
 
     ### Modify the Priors file
     cmd = ''.join( [ 'sed -i \'s/_rlnAnglePsi/_rlnAnglePsiPrior/g\' ', filename_PRIOR ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
     cmd = ''.join( [ 'sed -i \'s/_rlnAngleRot/_rlnAngleRotPrior/g\' ', filename_PRIOR ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
     cmd = ''.join( [ 'sed -i \'s/_rlnAngleTilt/_rlnAngleTiltPrior/g\' ', filename_PRIOR ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
     cmd = ''.join( [ 'sed -i \'s/_rlnOriginX/_rlnOriginXPrior/g\' ', filename_PRIOR ] )
     print( "Executing command:", cmd )
-    os.system( cmd )
+    #os.system( cmd )
     cmd = ''.join( [ 'sed -i \'s/_rlnOriginY/_rlnOriginYPrior/g\' ', filename_PRIOR ] )
     print( "Executing command:", cmd, "\n" )
-    os.system( cmd )
+    #os.system( cmd )
 
 
     ## Move files to the job directory
@@ -870,10 +870,10 @@ def defineSubparticles( my_ndarray, ROI, user_vector, user_fudge, user_subbox, h
 
     for file in to_move :
         cmd = ' '.join( [ 'mv', file, job_directory ] )
-        os.system( cmd )
+        #os.system( cmd )
     if user_testmode:
         cmd = ''.join( [ 'mv ', ROI, 'subparticle_alignments_abbrev.star ', job_directory ] )
-        os.system( cmd )
+        #os.system( cmd )
 
     print( "\nSuccess!\n" )
 

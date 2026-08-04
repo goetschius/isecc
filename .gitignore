@@ -1,0 +1,31 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local tool caches/config
+.mplconfig/
+.vispy_mesh_cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local CryoSPARC connection helpers
+import_symexpanded_particles_to_cryosparc.py
+
+# RELION/STAR data outputs
+*.star
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

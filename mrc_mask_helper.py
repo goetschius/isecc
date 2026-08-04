@@ -31,13 +31,37 @@ def coordinate_grids(shape, angstrom_per_pixel):
     return np.meshgrid(z, y, x, indexing="ij")
 
 
+def sphere_center_from_dimensions(dimensions):
+    if "sphere_axis_xyz" in dimensions:
+        axis = np.asarray(dimensions["sphere_axis_xyz"], dtype=np.float32)
+        norm = float(np.linalg.norm(axis))
+        if norm <= 0.0:
+            axis = np.array((0.0, 0.0, 1.0), dtype=np.float32)
+        else:
+            axis = axis / norm
+        return axis * float(dimensions.get("sphere_offset", 0.0))
+    return np.array(
+        (
+            float(dimensions.get("sphere_x_offset", 0.0)),
+            float(dimensions.get("sphere_y_offset", 0.0)),
+            float(dimensions.get("sphere_z_offset", 0.0)),
+        ),
+        dtype=np.float32,
+    )
+
+
 def build_mask(volume_shape, angstrom_per_pixel, shape_name, dimensions, orientation):
     zz, yy, xx = coordinate_grids(volume_shape, angstrom_per_pixel)
 
     if shape_name == "sphere":
         radius = float(dimensions["sphere_radius"])
-        z_offset = float(dimensions["sphere_z_offset"])
-        return ((xx ** 2) + (yy ** 2) + ((zz - z_offset) ** 2) <= radius ** 2).astype(np.float32)
+        x_offset, y_offset, z_offset = sphere_center_from_dimensions(dimensions)
+        return (
+            ((xx - x_offset) ** 2)
+            + ((yy - y_offset) ** 2)
+            + ((zz - z_offset) ** 2)
+            <= radius ** 2
+        ).astype(np.float32)
 
     if shape_name == "square-cube":
         half_extent = float(dimensions["cube_x"]) / 2.0
@@ -87,7 +111,15 @@ def mask_summary(shape_name, dimensions, orientation):
     parts = [f"Mask: {display_names.get(shape_name, shape_name)}"]
     if shape_name == "sphere":
         parts.append(f"Radius {float(dimensions['sphere_radius']):.2f} A")
-        parts.append(f"Z offset {float(dimensions['sphere_z_offset']):.2f} A")
+        if "sphere_axis_xyz" in dimensions:
+            parts.append(f"Offset {float(dimensions.get('sphere_offset', 0.0)):.2f} A")
+        center = sphere_center_from_dimensions(dimensions)
+        parts.append(
+            "Center "
+            f"X {float(center[0]):.2f} A, "
+            f"Y {float(center[1]):.2f} A, "
+            f"Z {float(center[2]):.2f} A"
+        )
     elif shape_name == "square-cube":
         parts.append(f"Edge {float(dimensions['cube_x']):.2f} A")
     elif shape_name == "cylinder":
@@ -152,7 +184,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
         self.form.addRow("Shape", self.shape_combo)
 
         self.sphere_radius_spin = self._make_length_spinbox()
-        self.sphere_z_offset_spin = self._make_signed_length_spinbox()
+        self.sphere_offset_spin = self._make_signed_length_spinbox()
         self.cylinder_radius_spin = self._make_length_spinbox()
         self.cylinder_height_spin = self._make_length_spinbox()
         self.cube_x_spin = self._make_length_spinbox()
@@ -163,9 +195,10 @@ class MrcMaskHelper(QtWidgets.QWidget):
         self.orientation_combo.addItem("y (height along y)", "y")
         self.orientation_combo.addItem("z (height along z)", "z")
         self.orientation_combo.setCurrentIndex(2)
+        self.sphere_axis_xyz = np.array((0.0, 0.0, 1.0), dtype=np.float32)
 
         self._add_shape_row("sphere_radius", "Sphere radius", self.sphere_radius_spin)
-        self._add_shape_row("sphere_z_offset", "Center Z offset", self.sphere_z_offset_spin)
+        self._add_shape_row("sphere_offset", "Center offset", self.sphere_offset_spin)
         self._add_shape_row("cylinder_radius", "Cylinder radius", self.cylinder_radius_spin)
         self._add_shape_row("cylinder_height", "Cylinder height", self.cylinder_height_spin)
         self._add_shape_row("cube_x", "Cube X", self.cube_x_spin)
@@ -294,7 +327,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
         box_angstrom = np.array(self.volume.shape[::-1], dtype=np.float32) * float(self.angstrom_per_pixel)
         min_extent = float(np.min(box_angstrom))
         self.sphere_radius_spin.setValue(round(min_extent * 0.25, 2))
-        self.sphere_z_offset_spin.setValue(0.0)
+        self.sphere_offset_spin.setValue(0.0)
         self.cube_x_spin.setValue(round(min_extent, 2))
         self.cylinder_radius_spin.setValue(round(min_extent * 0.20, 2))
         self.cylinder_height_spin.setValue(round(min_extent, 2))
@@ -310,8 +343,15 @@ class MrcMaskHelper(QtWidgets.QWidget):
             self.shape_combo.setCurrentText(shape_name)
         if "sphere_radius" in self.defaults:
             self.sphere_radius_spin.setValue(float(self.defaults["sphere_radius"]))
-        if "sphere_z_offset" in self.defaults:
-            self.sphere_z_offset_spin.setValue(float(self.defaults["sphere_z_offset"]))
+        if "sphere_axis_xyz" in self.defaults:
+            axis = np.asarray(self.defaults["sphere_axis_xyz"], dtype=np.float32)
+            norm = float(np.linalg.norm(axis))
+            if norm > 0.0:
+                self.sphere_axis_xyz = axis / norm
+        if "sphere_offset" in self.defaults:
+            self.sphere_offset_spin.setValue(float(self.defaults["sphere_offset"]))
+        elif "sphere_z_offset" in self.defaults:
+            self.sphere_offset_spin.setValue(float(self.defaults["sphere_z_offset"]))
 
     def _set_default_outputs(self, input_path):
         shape_name = self.shape_combo.currentText()
@@ -323,7 +363,7 @@ class MrcMaskHelper(QtWidgets.QWidget):
     def _update_shape_controls(self):
         shape_name = self.shape_combo.currentText()
         visible_rows = {
-            "sphere": {"sphere_radius", "sphere_z_offset"},
+            "sphere": {"sphere_radius", "sphere_offset"},
             "square-cube": {"cube_x"},
             "cylinder": {"cylinder_radius", "cylinder_height", "orientation"},
             "rectangle-cube": {"cube_x", "cube_y", "cube_z"},
@@ -346,7 +386,8 @@ class MrcMaskHelper(QtWidgets.QWidget):
         shape_name = self.shape_combo.currentText()
         dimensions = {
             "sphere_radius": float(self.sphere_radius_spin.value()),
-            "sphere_z_offset": float(self.sphere_z_offset_spin.value()),
+            "sphere_offset": float(self.sphere_offset_spin.value()),
+            "sphere_axis_xyz": self.sphere_axis_xyz.astype(float).tolist(),
             "cylinder_radius": float(self.cylinder_radius_spin.value()),
             "cylinder_height": float(self.cylinder_height_spin.value()),
             "cube_x": float(self.cube_x_spin.value()),
