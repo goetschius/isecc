@@ -2,7 +2,7 @@
 
 import numpy as np
 
-def getSymOps():
+def getSymOps(symmetry="I1"):
 
     ### Generate array containing I1 rotations ready for pyQuaternion in format [ a, bi, cj, dk ]
     I1Quaternions = np.array( [ [ 1.000, 0.000, 0.000, 0.000 ],    [ 0.000, 1.000, 0.000, 0.000 ],
@@ -67,4 +67,9 @@ def getSymOps():
                                 [ 0.000, -0.500, 0.809, 0.309 ],   [ 0.000, 0.500, 0.809, -0.309 ],          
                                 [ 0.000, 0.809, 0.309, -0.500 ],   [ 0.000, 0.000, 1.000, 0.000 ]     ]    )
 
-    return I1Quaternions
+    symmetry = str(symmetry).upper()
+    if symmetry == "I1":
+        return I1Quaternions
+    if symmetry == "I2":
+        return I2Quaternions
+    raise ValueError(f"Unsupported icosahedral symmetry: {symmetry}")
